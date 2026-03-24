@@ -1,0 +1,76 @@
+@{
+    ViewBag.Title = "Instruments";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="instruments">
+    <h2>Instruments</h2>
+
+    <div class="filters">
+        <form method="get" action="/Instruments">
+            <label>Exchange:</label>
+            <select name="exchange">
+                <option value="">All</option>
+                <option value="LSE" @(ViewBag.ExchangeFilter == "LSE" ? "selected" : "")>LSE</option>
+                <option value="AIM" @(ViewBag.ExchangeFilter == "AIM" ? "selected" : "")>AIM</option>
+                <option value="Turquoise" @(ViewBag.ExchangeFilter == "Turquoise" ? "selected" : "")>Turquoise</option>
+                <option value="BATS" @(ViewBag.ExchangeFilter == "BATS" ? "selected" : "")>BATS Chi-X</option>
+            </select>
+
+            <label>Asset Class:</label>
+            <select name="assetClass">
+                <option value="">All</option>
+                <option value="Equity" @(ViewBag.AssetClassFilter == "Equity" ? "selected" : "")>Equity</option>
+                <option value="FixedIncome" @(ViewBag.AssetClassFilter == "FixedIncome" ? "selected" : "")>Fixed Income</option>
+                <option value="ETF" @(ViewBag.AssetClassFilter == "ETF" ? "selected" : "")>ETF</option>
+                <option value="Derivative" @(ViewBag.AssetClassFilter == "Derivative" ? "selected" : "")>Derivative</option>
+            </select>
+
+            <label>Search:</label>
+            <input type="text" name="search" value="@ViewBag.SearchTerm" placeholder="Ticker, ISIN, or name..." />
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </form>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Ticker</th>
+                <th>RIC</th>
+                <th>Name</th>
+                <th>Exchange</th>
+                <th>Last Price</th>
+                <th>Prev Close</th>
+                <th>Day High</th>
+                <th>Day Low</th>
+                <th>Volume</th>
+                <th>Last Tick</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model != null)
+            {
+                foreach (System.Data.DataRow row in ((System.Data.DataTable)Model).Rows)
+                {
+                    decimal lastPrice = Convert.ToDecimal(row["LastPrice"]);
+                    decimal prevClose = Convert.ToDecimal(row["PreviousClose"]);
+                    decimal change = prevClose > 0 ? ((lastPrice - prevClose) / prevClose) * 100 : 0;
+                    string cssClass = change >= 0 ? "positive" : "negative";
+
+                    <tr>
+                        <td class="ticker"><a href="/Instruments/Details/@row["InstrumentId"]">@row["Ticker"]</a></td>
+                        <td>@row["RIC"]</td>
+                        <td>@row["InstrumentName"]</td>
+                        <td>@row["Exchange"]</td>
+                        <td class="number @cssClass">@String.Format("{0:N4}", lastPrice)</td>
+                        <td class="number">@String.Format("{0:N4}", prevClose)</td>
+                        <td class="number">@String.Format("{0:N4}", row["DayHigh"])</td>
+                        <td class="number">@String.Format("{0:N4}", row["DayLow"])</td>
+                        <td class="number">@String.Format("{0:N0}", row["Volume"])</td>
+                        <td>@(row["LastTickTime"] != DBNull.Value ? Convert.ToDateTime(row["LastTickTime"]).ToString("HH:mm:ss") : "-")</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>

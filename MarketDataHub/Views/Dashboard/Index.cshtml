@@ -1,0 +1,122 @@
+@{
+    ViewBag.Title = "Market Data Dashboard";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="dashboard">
+    <!-- Feed Status Banner -->
+    <div class="feed-status @(ViewBag.FeedConnected ? "feed-connected" : "feed-disconnected")">
+        <span class="feed-indicator"></span>
+        <strong>FIX Feed:</strong> @(ViewBag.FeedConnected ? "Connected" : "DISCONNECTED")
+        &nbsp;|&nbsp;
+        <strong>Ticks Today:</strong> @String.Format("{0:N0}", ViewBag.TicksToday)
+        &nbsp;|&nbsp;
+        <strong>Last Tick:</strong> @(ViewBag.LastTick != DateTime.MinValue ? ((DateTime)ViewBag.LastTick).ToString("HH:mm:ss.fff") : "N/A")
+        @if (!ViewBag.FeedConnected && (Session["Role"].ToString() == "Admin" || Session["Role"].ToString() == "DataManager"))
+        {
+            using (Html.BeginForm("ReconnectFeed", "Dashboard", FormMethod.Post))
+            {
+                <button type="submit" class="btn btn-warning btn-sm">Reconnect Feed</button>
+            }
+        }
+    </div>
+
+    <!-- Index Values -->
+    <div class="section">
+        <h2>Index Values</h2>
+        <div class="index-cards">
+            @if (ViewBag.IndexValues != null)
+            {
+                foreach (System.Data.DataRow idx in ((System.Data.DataTable)ViewBag.IndexValues).Rows)
+                {
+                    decimal change = Convert.ToDecimal(idx["ChangePercent"]);
+                    string cssClass = change >= 0 ? "positive" : "negative";
+                    <div class="index-card @cssClass">
+                        <h3>@idx["IndexCode"]</h3>
+                        <div class="index-value">@String.Format("{0:N2}", idx["Value"])</div>
+                        <div class="index-change">@String.Format("{0:+0.00;-0.00}", idx["ChangeAbsolute"]) (@String.Format("{0:+0.00;-0.00}%", change))</div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Top Gainers -->
+        <div class="section">
+            <h2>Top Gainers</h2>
+            <table class="data-table">
+                <thead><tr><th>Ticker</th><th>Name</th><th>Price</th><th>Change %</th><th>Volume</th></tr></thead>
+                <tbody>
+                @if (ViewBag.TopGainers != null)
+                {
+                    foreach (System.Data.DataRow row in ((System.Data.DataTable)ViewBag.TopGainers).Rows)
+                    {
+                        <tr>
+                            <td class="ticker">@row["Ticker"]</td>
+                            <td>@row["InstrumentName"]</td>
+                            <td class="number">@String.Format("{0:N4}", row["LastPrice"])</td>
+                            <td class="number positive">@String.Format("+{0:N2}%", row["ChangePercent"])</td>
+                            <td class="number">@String.Format("{0:N0}", row["Volume"])</td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Top Losers -->
+        <div class="section">
+            <h2>Top Losers</h2>
+            <table class="data-table">
+                <thead><tr><th>Ticker</th><th>Name</th><th>Price</th><th>Change %</th><th>Volume</th></tr></thead>
+                <tbody>
+                @if (ViewBag.TopLosers != null)
+                {
+                    foreach (System.Data.DataRow row in ((System.Data.DataTable)ViewBag.TopLosers).Rows)
+                    {
+                        <tr>
+                            <td class="ticker">@row["Ticker"]</td>
+                            <td>@row["InstrumentName"]</td>
+                            <td class="number">@String.Format("{0:N4}", row["LastPrice"])</td>
+                            <td class="number negative">@String.Format("{0:N2}%", row["ChangePercent"])</td>
+                            <td class="number">@String.Format("{0:N0}", row["Volume"])</td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Volume Leaders -->
+    <div class="section">
+        <h2>Volume Leaders</h2>
+        <table class="data-table">
+            <thead><tr><th>Ticker</th><th>Name</th><th>Price</th><th>Change %</th><th>Volume</th></tr></thead>
+            <tbody>
+            @if (ViewBag.VolumeLeaders != null)
+            {
+                foreach (System.Data.DataRow row in ((System.Data.DataTable)ViewBag.VolumeLeaders).Rows)
+                {
+                    decimal change = Convert.ToDecimal(row["ChangePercent"]);
+                    <tr>
+                        <td class="ticker">@row["Ticker"]</td>
+                        <td>@row["InstrumentName"]</td>
+                        <td class="number">@String.Format("{0:N4}", row["LastPrice"])</td>
+                        <td class="number @(change >= 0 ? "positive" : "negative")">@String.Format("{0:+0.00;-0.00}%", change)</td>
+                        <td class="number">@String.Format("{0:N0}", row["Volume"])</td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Auto-refresh feed status every 10 seconds
+    setInterval(function() {
+        MarketDataHub.refreshFeedStatus();
+    }, 10000);
+</script>
