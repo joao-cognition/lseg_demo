@@ -14,6 +14,7 @@ bld/
 *.user
 *.userosscache
 *.sln.docstates
+*.rsuser
 
 # NuGet
 **/packages/*
@@ -39,10 +40,3 @@ msbuild.err
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-
-# User-specific files
-*.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
