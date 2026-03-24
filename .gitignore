@@ -1,0 +1,42 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# NuGet
+**/packages/*
+!**/packages/build/
+*.nupkg
+**/[Pp]ackages/
+project.lock.json
+
+# MSBuild
+*.log
+msbuild.wrn
+msbuild.err
+
+# Rider
+.idea/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini

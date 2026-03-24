@@ -125,7 +125,7 @@ See [Deployment Guide](docs/deployment-guide.md) for production deployment instr
 
 ## CI/CD
 
-Pipeline runs on GitLab CI. See `.gitlab-ci.yml` for configuration.
+Pipeline runs on GitHub Actions. See `.github/workflows/ci.yml` for configuration.
 
 Stages: `build` → `test` → `security` → `quality` → `deploy`
 

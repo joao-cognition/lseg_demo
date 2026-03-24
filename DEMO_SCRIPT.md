@@ -7,14 +7,14 @@ This demo repo is a **legacy C# ASP.NET (.NET Framework 4.6.1)** market data dis
 **Demo order:**
 1. **On-Prem → Cloud Modernization** (10-15 min) — the main event
 2. **API / Event-Driven Refactoring** (5-10 min) — architectural depth
-3. **GitLab → GitHub Migration** (5 min) — quick win
+3. **CI/CD Pipeline Review** (5 min) — quick win
 4. **Bonus: SonarQube Vulnerability Remediation** (5 min) — schedule-triggered
 
 ---
 
 ## Setup Before the Demo
 
-1. Push the repo to a **GitLab** instance (or GitHub — the `.gitlab-ci.yml` is there either way)
+1. Push the repo to a **GitHub** instance (CI/CD is configured via `.github/workflows/ci.yml`)
 2. Connect it to Devin
 3. Have the prospect's cloud platform in mind (likely **Azure** given LSEG's Microsoft relationship, but AWS works too)
 
@@ -99,32 +99,31 @@ This directly addresses a real architectural pattern they face — decoupling hi
 
 ---
 
-## Demo 3: GitLab → GitHub Migration
+## Demo 3: CI/CD Pipeline Review
 
 ### What's in the repo
 
-- `.gitlab-ci.yml` with full pipeline (build, test, security, quality, deploy)
-- `.gitlab/merge_request_templates/default.md` with LSEG-specific template
-- GitLab-specific CI features (SAST template include, environment URLs, `only:` clauses)
-- References to GitLab CI variables (`$SONAR_AUTH_TOKEN`, etc.)
+- `.github/workflows/ci.yml` with full pipeline (build, test, security, quality, deploy)
+- `.github/pull_request_template.md` with LSEG-specific template
+- GitHub Actions features (CodeQL security scanning, SonarQube integration)
+- References to GitHub Actions secrets (`${{ secrets.SONAR_TOKEN }}`, etc.)
 - MSDeploy-based deployment to IIS servers
 
 ### Suggested Devin Prompt
 
 ```
-Migrate this project's CI/CD from GitLab to GitHub:
+Review and improve this project's CI/CD pipeline:
 
-1. Convert .gitlab-ci.yml to equivalent GitHub Actions workflows
-2. Convert the GitLab merge request template to a GitHub pull request template
-3. Update any GitLab-specific CI variable references to GitHub Actions secrets
-4. Maintain all existing pipeline stages: build, test, security scanning, SonarQube analysis, and deployment
-5. Remove GitLab-specific files after migration
-6. Update the README to reference GitHub Actions instead of GitLab CI
+1. Review the GitHub Actions workflows for completeness
+2. Review the pull request template for team conventions
+3. Verify all pipeline stages work: build, test, security scanning, SonarQube analysis, and deployment
+4. Suggest improvements to the CI/CD configuration
+5. Update the README if any changes are made
 ```
 
 ### What makes this a quick win
 
-It's a clear, visual before/after. The `.gitlab-ci.yml` disappears, `.github/workflows/` appears, and everything maps cleanly. Great way to close the demo.
+The CI/CD pipeline is already configured with GitHub Actions including build, test, security scanning (CodeQL), SonarQube quality analysis, and deployment stages. Great way to show the pipeline in action.
 
 ---
 

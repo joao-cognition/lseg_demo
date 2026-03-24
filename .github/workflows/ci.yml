@@ -1,0 +1,161 @@
+# MarketDataHub CI/CD Pipeline
+# Migrated from GitLab CI to GitHub Actions
+# Stages: build -> test -> security -> quality -> deploy
+
+name: MarketDataHub CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  SOLUTION_FILE: MarketDataHub.sln
+  BUILD_CONFIGURATION: Release
+  DOTNET_FRAMEWORK_VERSION: '4.6.1'
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:DeployOnBuild=true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: MarketDataHub/bin/
+
+  test:
+    name: Test
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Setup VSTest
+        uses: darenm/Setup-VSTest@v1.3
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }}
+
+      - name: Run unit tests
+        run: vstest.console.exe MarketDataHub.Tests/bin/${{ env.BUILD_CONFIGURATION }}/MarketDataHub.Tests.dll
+
+  security:
+    name: Security Scan
+    runs-on: windows-latest
+    needs: build
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  quality:
+    name: SonarQube Analysis
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Setup Java (required by SonarScanner)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install SonarScanner for MSBuild
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Begin SonarQube analysis
+        run: |
+          dotnet-sonarscanner begin /k:"lseg-market-data-hub" /d:sonar.host.url="${{ secrets.SONAR_HOST_URL }}" /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }}
+
+      - name: End SonarQube analysis
+        run: |
+          dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
+  deploy:
+    name: Deploy
+    runs-on: windows-latest
+    needs: [ test, security, quality ]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: MarketDataHub/bin/
+
+      - name: Deploy to production
+        run: |
+          echo "Deployment step - configure with your deployment target"
+          echo "Previously deployed via MSDeploy to IIS servers LSEG-WEB-PROD01/02"
+          echo "Update this step with your target deployment infrastructure"
