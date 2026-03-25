@@ -54,6 +54,11 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Install .NET Framework 4.6.1 Developer Pack
+        run: |
+          choco install netfx-4.6.1-devpack -y --no-progress
+        shell: cmd
+
       - name: Build solution
         run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
 
@@ -84,6 +89,11 @@ jobs:
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
+
+      - name: Install .NET Framework 4.6.1 Developer Pack
+        run: |
+          choco install netfx-4.6.1-devpack -y --no-progress
+        shell: cmd
 
       - name: Build solution
         run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
@@ -183,6 +193,11 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Install .NET Framework 4.6.1 Developer Pack
+        run: |
+          choco install netfx-4.6.1-devpack -y --no-progress
+        shell: cmd
+
       - name: Package web application
         run: msbuild MarketDataHub\MarketDataHub.csproj /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:DeployOnBuild=true /p:PublishProfile=Package /p:PackageLocation="${{ github.workspace }}\artifacts\MarketDataHub.zip"
 
@@ -209,6 +224,11 @@ jobs:
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
+
+      - name: Install .NET Framework 4.6.1 Developer Pack
+        run: |
+          choco install netfx-4.6.1-devpack -y --no-progress
+        shell: cmd
 
       - name: Build solution
         run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
