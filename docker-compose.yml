@@ -1,74 +1,132 @@
-# MarketDataHub - On-Premises Docker Compose
-# This is used for the local development environment ONLY.
-# Production runs on dedicated Windows Servers with IIS.
+# MarketDataHub Local Development Environment
+# Spins up SQL Server instances and the web application for local development.
 # 
 # Prerequisites:
-#   - Docker Desktop for Windows with Windows Containers mode
-#   - Access to LSEG internal network for feed connectivity
+#   - Docker Desktop for Windows (with Windows containers enabled)
+#   - At least 8GB RAM allocated to Docker
 #
 # Usage:
 #   docker-compose up -d
-#   Then open http://localhost:8080
+#   Then navigate to http://localhost:8080
+#
+# NOTE: This does NOT include Oracle. For Oracle reference data testing,
+# connect to the UAT Oracle instance (LSEG-ORA-UAT01) via VPN.
+# The OLE DB provider must be installed locally (Oracle Client 12c).
+#
+# Last updated: Feb 2019 by Stuart M.
 
 version: '3.7'
 
 services:
-  # SQL Server - Primary database (mirrors LSEG-SQL01)
-  sqlserver:
+  # Primary SQL Server instance (maps to LSEG-SQL01 in production)
+  sqlserver-primary:
     image: mcr.microsoft.com/mssql/server:2017-latest
-    container_name: mdh-sqlserver
+    container_name: lseg-sql01-dev
     environment:
       - ACCEPT_EULA=Y
-      - SA_PASSWORD=DevSql!2019
+      - SA_PASSWORD=DevSql2017!
       - MSSQL_PID=Developer
     ports:
       - "1433:1433"
     volumes:
-      - sqldata:/var/opt/mssql
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - sqldata-primary:/var/opt/mssql
+      - ./scripts:/scripts
     networks:
-      - mdh-network
+      - lseg-internal
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "DevSql2017!" -Q "SELECT 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  # SQL Server - Tick Data Store (mirrors LSEG-SQL03)
-  sqlserver-ticks:
+  # Tick Data SQL Server instance (maps to LSEG-SQL03 in production)
+  sqlserver-tickstore:
     image: mcr.microsoft.com/mssql/server:2017-latest
-    container_name: mdh-sqlserver-ticks
+    container_name: lseg-sql03-dev
     environment:
       - ACCEPT_EULA=Y
-      - SA_PASSWORD=DevTick!2019
+      - SA_PASSWORD=DevSql2017!
       - MSSQL_PID=Developer
     ports:
       - "1434:1433"
     volumes:
-      - tickdata:/var/opt/mssql
+      - sqldata-tickstore:/var/opt/mssql
     networks:
-      - mdh-network
+      - lseg-internal
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P "DevSql2017!" -Q "SELECT 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  # Application (IIS)
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: mdh-web
-    ports:
-      - "8080:80"
-    depends_on:
-      - sqlserver
-      - sqlserver-ticks
+  # Reporting Replica (maps to LSEG-SQL02 in production)
+  sqlserver-reporting:
+    image: mcr.microsoft.com/mssql/server:2017-latest
+    container_name: lseg-sql02-dev
     environment:
-      - ConnectionStrings__MarketDataDb=Server=sqlserver;Database=MarketDataHub;User Id=sa;Password=DevSql!2019;
-      - ConnectionStrings__TickDataDb=Server=sqlserver-ticks;Database=TickStore;User Id=sa;Password=DevTick!2019;
-      - ConnectionStrings__ReportingDb=Server=sqlserver;Database=MarketDataHub;User Id=sa;Password=DevSql!2019;
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=DevSql2017!
+      - MSSQL_PID=Developer
+    ports:
+      - "1435:1433"
     volumes:
-      - filedata:/app/data
+      - sqldata-reporting:/var/opt/mssql
     networks:
-      - mdh-network
+      - lseg-internal
+
+  # Database initialization (runs init-db.sql on startup)
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: db-init
+    depends_on:
+      sqlserver-primary:
+        condition: service_healthy
+      sqlserver-tickstore:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/scripts
+    command: >
+      /bin/bash -c "
+        echo 'Initializing MarketDataHub database...'
+        /opt/mssql-tools/bin/sqlcmd -S sqlserver-primary -U SA -P 'DevSql2017!' -i /scripts/init-db.sql
+        echo 'Initializing TickStore on separate instance...'
+        /opt/mssql-tools/bin/sqlcmd -S sqlserver-tickstore -U SA -P 'DevSql2017!' -i /scripts/init-tickstore.sql
+        echo 'Database initialization complete.'
+      "
+    networks:
+      - lseg-internal
+
+  # SMTP server for email testing (replaces on-prem Exchange)
+  mailhog:
+    image: mailhog/mailhog
+    container_name: lseg-mail-dev
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI for viewing emails
+    networks:
+      - lseg-internal
+
+  # Shared file storage (replaces \\LSEG-NAS01 network share)
+  file-share:
+    image: alpine
+    container_name: lseg-nas01-dev
+    command: >
+      sh -c "
+        mkdir -p /data/TickArchive /data/EOD /data/Reports /data/Temp /data/Logs /data/Settlement /data/Regulatory/MiFID
+        echo 'File share directories created.'
+        tail -f /dev/null
+      "
+    volumes:
+      - filedata:/data
+    networks:
+      - lseg-internal
 
 volumes:
-  sqldata:
-  tickdata:
+  sqldata-primary:
+  sqldata-tickstore:
+  sqldata-reporting:
   filedata:
 
 networks:
-  mdh-network:
+  lseg-internal:
     driver: bridge

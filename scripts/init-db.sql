@@ -222,5 +222,158 @@ INSERT INTO IndexComposition (IndexCode, IndexName, InstrumentId, RIC, Weight, S
 ('FTSE100', 'FTSE 100 Index', 11, 'DGE.L', 0.040, 2250000000, 0.92, '2024-01-01', 1),
 ('FTSE100', 'FTSE 100 Index', 19, 'ULVR.L', 0.060, 2540000000, 0.90, '2024-01-01', 1);
 
+-- =============================================
+-- ETL Job Executions table (tracks all ETL runs)
+-- =============================================
+CREATE TABLE EtlJobExecutions (
+    ExecutionId INT IDENTITY(1,1) PRIMARY KEY,
+    JobName VARCHAR(50) NOT NULL,
+    StartTime DATETIME NOT NULL,
+    EndTime DATETIME,
+    Status VARCHAR(20) NOT NULL DEFAULT 'Running',
+    RecordsProcessed INT DEFAULT 0,
+    ErrorMessage NVARCHAR(MAX),
+    TriggeredBy VARCHAR(100),
+    ServerName VARCHAR(50),
+    OutputPath NVARCHAR(500)
+);
+
+CREATE INDEX IX_EtlJobs_Name_Time ON EtlJobExecutions(JobName, StartTime DESC);
+CREATE INDEX IX_EtlJobs_Status ON EtlJobExecutions(Status);
+GO
+
+-- =============================================
+-- Audit Trail table (7-year retention for MiFID II)
+-- =============================================
+CREATE TABLE AuditTrail (
+    AuditId BIGINT IDENTITY(1,1) PRIMARY KEY,
+    Category VARCHAR(30) NOT NULL,
+    Action VARCHAR(50) NOT NULL,
+    Details NVARCHAR(MAX),
+    Username VARCHAR(50),
+    IpAddress VARCHAR(45),
+    EntityType VARCHAR(50),
+    EntityId VARCHAR(100),
+    OldValue NVARCHAR(MAX),
+    NewValue NVARCHAR(MAX),
+    ServerName VARCHAR(50),
+    Timestamp DATETIME NOT NULL DEFAULT GETDATE()
+);
+
+CREATE INDEX IX_Audit_Category ON AuditTrail(Category, Timestamp DESC);
+CREATE INDEX IX_Audit_Entity ON AuditTrail(EntityType, EntityId);
+CREATE INDEX IX_Audit_User ON AuditTrail(Username, Timestamp DESC);
+GO
+
+-- =============================================
+-- Risk Metrics table
+-- =============================================
+CREATE TABLE RiskMetrics (
+    RiskMetricId INT IDENTITY(1,1) PRIMARY KEY,
+    InstrumentId INT FOREIGN KEY REFERENCES Instruments(InstrumentId),
+    RIC VARCHAR(20) NOT NULL,
+    CalcDate DATE NOT NULL,
+    Volatility20D DECIMAL(12,6),
+    Volatility60D DECIMAL(12,6),
+    Volatility252D DECIMAL(12,6),
+    VaR95 DECIMAL(12,6),
+    VaR99 DECIMAL(12,6),
+    MaxDrawdown DECIMAL(12,6),
+    SharpeRatio DECIMAL(12,6),
+    Beta DECIMAL(12,6),
+    CreatedDate DATETIME DEFAULT GETDATE(),
+    ModifiedDate DATETIME
+);
+
+CREATE UNIQUE INDEX IX_Risk_Instrument_Date ON RiskMetrics(InstrumentId, CalcDate);
+CREATE INDEX IX_Risk_CalcDate ON RiskMetrics(CalcDate DESC);
+GO
+
+-- =============================================
+-- Corporate Actions History (local copy)
+-- =============================================
+CREATE TABLE CorporateActionsHistory (
+    ActionHistoryId INT IDENTITY(1,1) PRIMARY KEY,
+    ISIN VARCHAR(12) NOT NULL,
+    ActionType VARCHAR(30) NOT NULL,
+    EffectiveDate DATE NOT NULL,
+    RatioOld INT,
+    RatioNew INT,
+    CashAmount DECIMAL(18,4),
+    Currency VARCHAR(3),
+    Description NVARCHAR(500),
+    OracleActionId INT,
+    ProcessedDate DATETIME DEFAULT GETDATE(),
+    ProcessedBy VARCHAR(50),
+    CreatedDate DATETIME DEFAULT GETDATE()
+);
+
+CREATE INDEX IX_CA_ISIN ON CorporateActionsHistory(ISIN, EffectiveDate DESC);
+GO
+
+-- =============================================
+-- Counterparties (synced from Oracle)
+-- =============================================
+CREATE TABLE Counterparties (
+    CounterpartyId INT IDENTITY(1,1) PRIMARY KEY,
+    LEICode VARCHAR(20) NOT NULL UNIQUE,
+    LegalName NVARCHAR(200) NOT NULL,
+    ShortName VARCHAR(50),
+    CountryCode VARCHAR(3),
+    EntityType VARCHAR(30),
+    BicCode VARCHAR(11),
+    Status VARCHAR(20) DEFAULT 'ACTIVE',
+    RiskRating VARCHAR(10),
+    CreatedDate DATETIME DEFAULT GETDATE(),
+    ModifiedDate DATETIME
+);
+
+CREATE INDEX IX_CP_LEI ON Counterparties(LEICode);
+GO
+
+-- =============================================
+-- Market Holidays (synced from Oracle)
+-- =============================================
+CREATE TABLE MarketHolidays (
+    HolidayId INT IDENTITY(1,1) PRIMARY KEY,
+    HolidayDate DATE NOT NULL,
+    HolidayName NVARCHAR(100),
+    ExchangeCode VARCHAR(10) NOT NULL,
+    HolidayType VARCHAR(20) DEFAULT 'FULL',
+    IsHalfDay INT DEFAULT 0,
+    EarlyCloseTime VARCHAR(8)
+);
+
+CREATE INDEX IX_Holiday_Exchange ON MarketHolidays(ExchangeCode, HolidayDate);
+GO
+
+-- =============================================
+-- Seed ETL Job History (to show realistic execution history)
+-- =============================================
+INSERT INTO EtlJobExecutions (JobName, StartTime, EndTime, Status, RecordsProcessed, TriggeredBy, ServerName) VALUES
+('REFDATA_FULL_SYNC', '2024-01-14 02:00:05', '2024-01-14 02:42:18', 'Completed', 2487, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('REFDATA_DELTA_SYNC', '2024-01-15 09:00:02', '2024-01-15 09:02:15', 'Completed', 12, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('CORPORATE_ACTIONS_SYNC', '2024-01-15 06:00:01', '2024-01-15 06:08:45', 'Completed', 3, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('EOD_EXPORT_CSV', '2024-01-15 16:45:00', '2024-01-15 16:52:30', 'Completed', 1, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('EOD_EXPORT_FIXEDWIDTH', '2024-01-15 16:50:01', '2024-01-15 16:57:22', 'Completed', 1, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('MIFID_TRANSACTION_REPORT', '2024-01-15 17:00:00', '2024-01-15 17:15:44', 'Completed', 1, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('TICK_ARCHIVE', '2024-01-15 03:00:03', '2024-01-15 03:55:12', 'Completed', 1, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('RISK_METRICS_CALC', '2024-01-15 18:00:01', '2024-01-15 18:24:33', 'Completed', 2487, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('SETTLEMENT_EXTRACT', '2024-01-15 19:00:00', '2024-01-15 19:12:08', 'Completed', 156, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('DB_REPLICATION_HEALTHCHECK', '2024-01-15 19:15:00', '2024-01-15 19:15:02', 'Completed', 4, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01'),
+('REFDATA_FULL_SYNC', '2024-01-13 02:00:04', '2024-01-13 02:00:45', 'Failed', 0, 'WindowsService/LSEG-WEB-PROD01', 'LSEG-WEB-PROD01');
+
+UPDATE EtlJobExecutions SET ErrorMessage = 'ORA-03113: end-of-file on communication channel - Oracle Exadata connection lost during nightly maintenance window'
+WHERE Status = 'Failed' AND JobName = 'REFDATA_FULL_SYNC';
+
+-- Seed some audit trail entries
+INSERT INTO AuditTrail (Category, Action, Details, Username, ServerName, Timestamp) VALUES
+('SYSTEM_EVENT', 'SERVICE_START', 'MarketDataHub started on LSEG-WEB-PROD01 (Instance: PROD-LDN-MDH-01)', 'SYSTEM', 'LSEG-WEB-PROD01', '2024-01-15 06:45:00'),
+('USER_AUTH', 'LOGIN', 'LDAP auth successful', 'stuart.m', 'LSEG-WEB-PROD01', '2024-01-15 07:30:12'),
+('USER_AUTH', 'LOGIN', 'LDAP auth successful', 'j.chen', 'LSEG-WEB-PROD01', '2024-01-15 07:45:33'),
+('ETL_EXECUTION', 'REFDATA_FULL_SYNC', 'Completed (Records: 2487)', 'ETL-Service', 'LSEG-WEB-PROD01', '2024-01-14 02:42:18'),
+('CORPORATE_ACTION', 'CASH_DIVIDEND', 'Processed successfully', 'ETL-Service', 'LSEG-WEB-PROD01', '2024-01-15 06:05:22'),
+('REPORT_GENERATION', 'MIFID_TRANSACTION_REPORT', 'Output: \\LSEG-NAS01\MarketData\Regulatory\MiFID\2024\MIFID_TXN_20240115.xml', 'ETL-Service', 'LSEG-WEB-PROD01', '2024-01-15 17:15:44');
+
 PRINT 'MarketDataHub database initialized successfully.';
 GO
