@@ -70,6 +70,15 @@
     <Compile Include="Services\FileExportService.cs" />
     <Compile Include="Services\NotificationService.cs" />
     <Compile Include="Services\ComplianceReportService.cs" />
+    <Compile Include="Services\EtlPipelineService.cs" />
+    <Compile Include="Services\DataReplicationService.cs" />
+    <Compile Include="Services\RiskCalculationService.cs" />
+    <Compile Include="Services\CorporateActionsService.cs" />
+    <Compile Include="Services\SettlementService.cs" />
+    <Compile Include="Services\AuditService.cs" />
+    <Compile Include="Controllers\EtlController.cs" />
+    <Compile Include="Controllers\AdminController.cs" />
+    <Compile Include="Data\OracleDatabaseHelper.cs" />
     <Compile Include="Utils\CryptoHelper.cs" />
     <Compile Include="Utils\ConfigManager.cs" />
     <Compile Include="Utils\FixProtocolClient.cs" />

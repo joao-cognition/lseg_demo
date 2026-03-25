@@ -362,6 +362,35 @@ namespace MarketDataHub.Data
 
         #endregion
 
+        #region ETL Helper Methods
+
+        /// <summary>
+        /// Execute a non-query SQL command from ETL services.
+        /// Exposed as public for use by EtlPipelineService and other batch processes.
+        /// </summary>
+        public static int ExecuteEtlCommand(string sql, string db = "main")
+        {
+            return ExecuteNonQuery(sql, db);
+        }
+
+        /// <summary>
+        /// Execute a query from ETL services. Returns DataTable.
+        /// </summary>
+        public static DataTable ExecuteEtlQuery(string sql, string db = "main")
+        {
+            return ExecuteQuery(sql, db);
+        }
+
+        /// <summary>
+        /// Execute a scalar query from ETL services.
+        /// </summary>
+        public static object ExecuteEtlScalar(string sql)
+        {
+            return ExecuteScalar(sql);
+        }
+
+        #endregion
+
         #region Cache Serialization
 
         /// <summary>

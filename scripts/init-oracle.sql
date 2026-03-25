@@ -1,0 +1,185 @@
+-- Oracle Exadata Reference Data Schema Initialization
+-- Target: LSEG-ORA-PROD01 / REFDATA schema
+-- Version: 3.2.1
+-- Last updated: January 2019
+-- 
+-- This schema is the enterprise master for all reference data.
+-- MarketDataHub syncs from this Oracle instance nightly via ETL.
+-- 
+-- NOTE: This script is for documentation/dev purposes only.
+-- The production Oracle schema is managed by the DBA team.
+-- Do NOT run this against production. - DBA Team (2019)
+
+-- =============================================
+-- Reference Data Schema
+-- =============================================
+
+CREATE TABLE REFDATA.INSTRUMENTS (
+    INSTRUMENT_ID       NUMBER(10) NOT NULL PRIMARY KEY,
+    ISIN_CODE           VARCHAR2(12) NOT NULL,
+    SEDOL_CODE          VARCHAR2(7),
+    RIC_CODE            VARCHAR2(20) NOT NULL,
+    TICKER_SYMBOL       VARCHAR2(10) NOT NULL,
+    INSTRUMENT_NAME     NVARCHAR2(200) NOT NULL,
+    EXCHANGE_CODE       VARCHAR2(10) NOT NULL,
+    ASSET_CLASS_CODE    VARCHAR2(20) NOT NULL,
+    CURRENCY_CODE       VARCHAR2(3) DEFAULT 'GBP',
+    SECTOR_CODE         VARCHAR2(20),
+    LISTING_DATE        DATE,
+    DELISTING_DATE      DATE,
+    IS_ACTIVE           NUMBER(1) DEFAULT 1,
+    COUNTRY_OF_INCORPORATION VARCHAR2(3),
+    COUNTRY_OF_RISK     VARCHAR2(3),
+    LEI_CODE            VARCHAR2(20),
+    CFI_CODE            VARCHAR2(6),
+    FISN_CODE           VARCHAR2(35),
+    SHARES_OUTSTANDING  NUMBER(15) DEFAULT 0,
+    FREE_FLOAT_SHARES   NUMBER(15) DEFAULT 0,
+    FREE_FLOAT_FACTOR   NUMBER(6,4) DEFAULT 1.0,
+    MARKET_CAP_USD      NUMBER(18,2) DEFAULT 0,
+    DIVIDEND_YIELD      NUMBER(8,4),
+    PE_RATIO            NUMBER(8,2),
+    CREATED_DATE        DATE DEFAULT SYSDATE,
+    MODIFIED_DATE       DATE DEFAULT SYSDATE,
+    MODIFIED_BY         VARCHAR2(50)
+);
+
+CREATE UNIQUE INDEX IDX_INSTRUMENTS_ISIN ON REFDATA.INSTRUMENTS(ISIN_CODE);
+CREATE INDEX IDX_INSTRUMENTS_RIC ON REFDATA.INSTRUMENTS(RIC_CODE);
+CREATE INDEX IDX_INSTRUMENTS_EXCHANGE ON REFDATA.INSTRUMENTS(EXCHANGE_CODE);
+CREATE INDEX IDX_INSTRUMENTS_MODIFIED ON REFDATA.INSTRUMENTS(MODIFIED_DATE);
+
+-- =============================================
+-- Sectors Reference Table
+-- =============================================
+
+CREATE TABLE REFDATA.SECTORS (
+    SECTOR_CODE         VARCHAR2(20) NOT NULL PRIMARY KEY,
+    SECTOR_NAME         NVARCHAR2(100) NOT NULL,
+    SECTOR_GROUP        VARCHAR2(50),
+    ICB_CODE            VARCHAR2(10),
+    IS_ACTIVE           NUMBER(1) DEFAULT 1
+);
+
+-- =============================================
+-- Corporate Actions
+-- =============================================
+
+CREATE TABLE REFDATA.CORPORATE_ACTIONS (
+    ACTION_ID           NUMBER(10) NOT NULL PRIMARY KEY,
+    INSTRUMENT_ID       NUMBER(10) REFERENCES REFDATA.INSTRUMENTS(INSTRUMENT_ID),
+    ISIN_CODE           VARCHAR2(12) NOT NULL,
+    ACTION_TYPE         VARCHAR2(30) NOT NULL,
+    EFFECTIVE_DATE      DATE NOT NULL,
+    RECORD_DATE         DATE,
+    EX_DATE             DATE,
+    PAYMENT_DATE        DATE,
+    RATIO_OLD           NUMBER(10),
+    RATIO_NEW           NUMBER(10),
+    CASH_AMOUNT         NUMBER(18,4),
+    CURRENCY_CODE       VARCHAR2(3),
+    DESCRIPTION         NVARCHAR2(500),
+    STATUS              VARCHAR2(20) DEFAULT 'PENDING',
+    IS_PROCESSED        NUMBER(1) DEFAULT 0,
+    PROCESSED_DATE      DATE,
+    PROCESSED_BY        VARCHAR2(50),
+    SOURCE_SYSTEM       VARCHAR2(30),
+    CREATED_DATE        DATE DEFAULT SYSDATE
+);
+
+CREATE INDEX IDX_CA_EFFECTIVE ON REFDATA.CORPORATE_ACTIONS(EFFECTIVE_DATE, STATUS);
+CREATE INDEX IDX_CA_ISIN ON REFDATA.CORPORATE_ACTIONS(ISIN_CODE);
+
+-- =============================================
+-- Counterparties
+-- =============================================
+
+CREATE TABLE REFDATA.COUNTERPARTIES (
+    COUNTERPARTY_ID     NUMBER(10) NOT NULL PRIMARY KEY,
+    LEI_CODE            VARCHAR2(20) NOT NULL,
+    LEGAL_NAME          NVARCHAR2(200) NOT NULL,
+    SHORT_NAME          VARCHAR2(50),
+    COUNTRY_CODE        VARCHAR2(3),
+    ENTITY_TYPE         VARCHAR2(30),
+    BIC_CODE            VARCHAR2(11),
+    STATUS              VARCHAR2(20) DEFAULT 'ACTIVE',
+    RISK_RATING         VARCHAR2(10),
+    AML_STATUS          VARCHAR2(20) DEFAULT 'CLEAR',
+    KYC_EXPIRY_DATE     DATE,
+    CREATED_DATE        DATE DEFAULT SYSDATE,
+    MODIFIED_DATE       DATE DEFAULT SYSDATE
+);
+
+CREATE UNIQUE INDEX IDX_CP_LEI ON REFDATA.COUNTERPARTIES(LEI_CODE);
+
+-- =============================================
+-- Index Composition (Master)
+-- =============================================
+
+CREATE TABLE REFDATA.INDEX_COMPOSITION (
+    COMPOSITION_ID      NUMBER(10) NOT NULL PRIMARY KEY,
+    INDEX_CODE          VARCHAR2(10) NOT NULL,
+    INDEX_NAME          NVARCHAR2(100),
+    INSTRUMENT_ID       NUMBER(10) REFERENCES REFDATA.INSTRUMENTS(INSTRUMENT_ID),
+    WEIGHT              NUMBER(10,6) DEFAULT 0,
+    SHARES_IN_ISSUE     NUMBER(15) DEFAULT 0,
+    FREE_FLOAT_FACTOR   NUMBER(6,4) DEFAULT 1.0,
+    EFFECTIVE_DATE      DATE NOT NULL,
+    EXPIRY_DATE         DATE,
+    IS_ACTIVE           NUMBER(1) DEFAULT 1,
+    MODIFIED_DATE       DATE DEFAULT SYSDATE,
+    MODIFIED_BY         VARCHAR2(50)
+);
+
+CREATE INDEX IDX_IC_INDEX_CODE ON REFDATA.INDEX_COMPOSITION(INDEX_CODE, IS_ACTIVE);
+
+-- =============================================
+-- Market Holidays
+-- =============================================
+
+CREATE TABLE REFDATA.MARKET_HOLIDAYS (
+    HOLIDAY_ID          NUMBER(10) NOT NULL PRIMARY KEY,
+    HOLIDAY_DATE        DATE NOT NULL,
+    HOLIDAY_NAME        NVARCHAR2(100),
+    EXCHANGE_CODE       VARCHAR2(10) NOT NULL,
+    HOLIDAY_TYPE        VARCHAR2(20) DEFAULT 'FULL',
+    IS_HALF_DAY         NUMBER(1) DEFAULT 0,
+    EARLY_CLOSE_TIME    VARCHAR2(8)
+);
+
+CREATE INDEX IDX_HOLIDAYS_EXCHANGE_DATE ON REFDATA.MARKET_HOLIDAYS(EXCHANGE_CODE, HOLIDAY_DATE);
+
+-- =============================================
+-- Seed Data for Sectors
+-- =============================================
+
+INSERT INTO REFDATA.SECTORS VALUES ('BASIC_MAT', 'Basic Materials', 'Resources', '1000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('ENERGY', 'Energy', 'Resources', '0500', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('FINANCIALS', 'Financials', 'Financials', '8000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('HEALTHCARE', 'Healthcare', 'Healthcare', '4000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('INDUSTRIALS', 'Industrials', 'Industrials', '2000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('CONS_GOODS', 'Consumer Goods', 'Consumer', '3000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('CONS_SVC', 'Consumer Services', 'Consumer', '5000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('TELECOM', 'Telecommunications', 'Technology', '6000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('TECHNOLOGY', 'Technology', 'Technology', '9000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('UTILITIES', 'Utilities', 'Utilities', '7000', 1);
+INSERT INTO REFDATA.SECTORS VALUES ('REAL_ESTATE', 'Real Estate', 'Real Estate', '8600', 1);
+
+COMMIT;
+
+-- =============================================
+-- Seed Market Holidays (LSE 2024)
+-- =============================================
+
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (1, TO_DATE('2024-01-01', 'YYYY-MM-DD'), 'New Year''s Day', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (2, TO_DATE('2024-03-29', 'YYYY-MM-DD'), 'Good Friday', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (3, TO_DATE('2024-04-01', 'YYYY-MM-DD'), 'Easter Monday', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (4, TO_DATE('2024-05-06', 'YYYY-MM-DD'), 'Early May Bank Holiday', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (5, TO_DATE('2024-05-27', 'YYYY-MM-DD'), 'Spring Bank Holiday', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (6, TO_DATE('2024-08-26', 'YYYY-MM-DD'), 'Summer Bank Holiday', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (7, TO_DATE('2024-12-24', 'YYYY-MM-DD'), 'Christmas Eve', 'LSE', 'HALF', 1, '12:30');
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (8, TO_DATE('2024-12-25', 'YYYY-MM-DD'), 'Christmas Day', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (9, TO_DATE('2024-12-26', 'YYYY-MM-DD'), 'Boxing Day', 'LSE', 'FULL', 0, NULL);
+INSERT INTO REFDATA.MARKET_HOLIDAYS VALUES (10, TO_DATE('2024-12-31', 'YYYY-MM-DD'), 'New Year''s Eve', 'LSE', 'HALF', 1, '12:30');
+
+COMMIT;

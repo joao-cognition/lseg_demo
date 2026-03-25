@@ -1,0 +1,289 @@
+# MarketDataHub CI/CD Pipeline
+# GitHub Actions configuration for .NET Framework 4.6.1 application
+# Converted from GitLab CI (.gitlab-ci.yml)
+# Runs on Windows runner with Visual Studio Build Tools
+
+name: MarketDataHub CI/CD
+
+on:
+  push:
+    branches: [ main, develop, 'release/*' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  SOLUTION_FILE: 'MarketDataHub.sln'
+  BUILD_CONFIGURATION: 'Release'
+
+jobs:
+  # ============================================
+  # Build Stage
+  # ============================================
+  restore-packages:
+    name: Restore NuGet Packages
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: packages/
+          retention-days: 1
+
+  build-solution:
+    name: Build Solution
+    runs-on: windows-latest
+    needs: restore-packages
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            MarketDataHub/bin/
+            MarketDataHub.WindowsService/bin/
+          retention-days: 1
+
+  # ============================================
+  # Test Stage
+  # ============================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: windows-latest
+    needs: build-solution
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
+
+      - name: Setup VSTest
+        uses: darenm/Setup-VSTest@v1.3
+
+      - name: Run unit tests
+        run: vstest.console.exe MarketDataHub.Tests\bin\Release\MarketDataHub.Tests.dll /Logger:trx
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/*.trx'
+          retention-days: 7
+
+  # ============================================
+  # Security Stage
+  # ============================================
+  dependency-check:
+    name: Dependency Check
+    runs-on: windows-latest
+    needs: build-solution
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency Check
+        run: |
+          echo "Running OWASP Dependency Check..."
+          echo "Dependency check placeholder - configure OWASP Dependency-Check GitHub Action for full scanning"
+
+  credential-scan:
+    name: Credential Scan
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for hardcoded credentials
+        run: |
+          echo "Scanning for hardcoded credentials..."
+          findstr /S /I /N "password" MarketDataHub\*.cs MarketDataHub\*.config
+          findstr /S /I /N "apikey" MarketDataHub\*.cs MarketDataHub\*.config
+          echo "WARNING: Credential scan found matches. Review output above."
+
+  # ============================================
+  # Quality Stage (SonarQube)
+  # ============================================
+  sonarqube-analysis:
+    name: SonarQube Analysis
+    runs-on: windows-latest
+    needs: [build-solution, unit-tests]
+    continue-on-error: true  # Quality gate is currently failing - see README Security section
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: SonarQube Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          echo "SonarQube analysis placeholder"
+          echo "Configure SonarQube secrets (SONAR_TOKEN, SONAR_HOST_URL) in GitHub repository settings"
+          echo "Then use the SonarScanner for MSBuild to run analysis"
+
+  # ============================================
+  # Package Stage
+  # ============================================
+  package-web:
+    name: Package Web Application
+    runs-on: windows-latest
+    needs: [build-solution, unit-tests]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Package web application
+        run: msbuild MarketDataHub\MarketDataHub.csproj /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:DeployOnBuild=true /p:PublishProfile=Package /p:PackageLocation="${{ github.workspace }}\artifacts\MarketDataHub.zip"
+
+      - name: Upload web package
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-package
+          path: artifacts/
+          retention-days: 30
+
+  package-service:
+    name: Package Windows Service
+    runs-on: windows-latest
+    needs: build-solution
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.SOLUTION_FILE }}
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build solution
+        run: msbuild ${{ env.SOLUTION_FILE }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform="Any CPU" /t:Rebuild /v:minimal
+
+      - name: Package Windows Service
+        run: |
+          New-Item -Path "artifacts\WindowsService\" -ItemType Directory -Force
+          Copy-Item -Path "MarketDataHub.WindowsService\bin\Release\*" -Destination "artifacts\WindowsService\" -Recurse
+
+      - name: Upload service package
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-package
+          path: artifacts/WindowsService/
+          retention-days: 30
+
+  # ============================================
+  # Deploy Stage
+  # ============================================
+  deploy-uat:
+    name: Deploy to UAT
+    runs-on: windows-latest
+    needs: [package-web]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: uat
+      url: http://mdh-uat.lseg-internal.local
+    steps:
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: web-package
+          path: artifacts/
+
+      - name: Deploy to UAT
+        run: |
+          echo "Deploying to UAT..."
+          echo "Note: Deployment to on-premises IIS servers requires a self-hosted runner"
+          echo "with network access to LSEG-WEB-UAT01."
+          echo "Configure a self-hosted Windows runner with the 'deploy' label for production use."
+          echo "UAT deployment complete (placeholder)."
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: windows-latest
+    needs: [package-web, package-service]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: http://mdh.lseg-internal.local
+    steps:
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: web-package
+          path: artifacts/
+
+      - name: Download service package
+        uses: actions/download-artifact@v4
+        with:
+          name: service-package
+          path: artifacts/WindowsService/
+
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to Production..."
+          echo "Note: Deployment to on-premises IIS servers requires a self-hosted runner"
+          echo "with network access to LSEG-WEB-PROD01 and LSEG-WEB-PROD02."
+          echo ""
+          echo "Production deployment steps (requires self-hosted runner):"
+          echo "1. Stop IIS app pool on LSEG-WEB-PROD01 and LSEG-WEB-PROD02"
+          echo "2. Deploy web application to both servers"
+          echo "3. Stop Windows Service on LSEG-WEB-PROD01"
+          echo "4. Deploy Windows Service binaries"
+          echo "5. Start Windows Service"
+          echo "6. Start IIS app pools"
+          echo ""
+          echo "Production deployment complete (placeholder)."
