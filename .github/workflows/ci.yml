@@ -170,7 +170,7 @@ jobs:
     name: Package Web Application
     runs-on: windows-latest
     needs: [build-solution, unit-tests]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
     steps:
       - uses: actions/checkout@v4
 
