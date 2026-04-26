@@ -190,7 +190,7 @@ INSERT INTO Instruments (ISIN, SEDOL, RIC, Ticker, InstrumentName, Exchange, Ass
 ('GB00B24CGK77', 'B24CGK7', 'RECKITT.L', 'RKT', 'Reckitt Benckiser Group', 'LSE', 'Equity', 'GBP', 'Consumer Goods', 5890.0000, 5856.0000, 42000.00, '1999-12-29'),
 ('GB0031348658', 'B0744B3', 'BARC.L', 'BARC', 'Barclays plc', 'LSE', 'Equity', 'GBP', 'Financials', 187.5400, 186.2000, 30000.00, '1986-01-01'),
 ('GB0007980591', '0798059', 'BATS.L', 'BATS', 'British American Tobacco', 'LSE', 'Equity', 'GBP', 'Consumer Goods', 2734.0000, 2718.0000, 62000.00, '1912-01-01'),
-('IE00BZ12WP82', 'BZ12WP8', 'LSEG.L', 'LSEG', 'London Stock Exchange Group', 'LSE', 'Equity', 'GBP', 'Financials', 9456.0000, 9398.0000, 55000.00, '2001-07-20'),
+('GB0002162385', '0216238', 'LGEN.L', 'LGEN', 'Legal & General Group plc', 'LSE', 'Equity', 'GBP', 'Financials', 245.0000, 243.5000, 15000.00, '1979-01-01'),
 ('GB0002374006', '0237400', 'DGE.L', 'DGE', 'Diageo plc', 'LSE', 'Equity', 'GBP', 'Consumer Goods', 2876.0000, 2854.0000, 65000.00, '1997-12-17'),
 ('GB0009252882', '0925288', 'GSK.L', 'GSK', 'GSK plc', 'LSE', 'Equity', 'GBP', 'Healthcare', 1524.8000, 1518.0000, 62000.00, '2000-12-27'),
 ('GB00BLGZ9862', 'BLGZ986', 'TSCO.L', 'TSCO', 'Tesco plc', 'LSE', 'Equity', 'GBP', 'Consumer Services', 312.4000, 310.8000, 24000.00, '1947-01-01'),
@@ -205,11 +205,11 @@ INSERT INTO Instruments (ISIN, SEDOL, RIC, Ticker, InstrumentName, Exchange, Ass
 -- Seed users (passwords are MD5 hashed)
 -- admin/admin123, stuart/market2019, analyst/readonly
 INSERT INTO Users (Username, PasswordHash, FullName, Email, Department, Role, IsActive, CreatedDate) VALUES
-('admin', '0192023A7BBD73250516F069DF18B500', 'System Administrator', 'admin@lseg-internal.local', 'IT', 'Admin', 1, '2016-06-15'),
-('stuart.m', 'E10ADC3949BA59ABBE56E057F20F883E', 'Stuart Morrison', 'stuart.morrison@lseg-internal.local', 'IT', 'DataManager', 1, '2016-06-15'),
-('j.chen', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Jennifer Chen', 'jennifer.chen@lseg-internal.local', 'Trading', 'Analyst', 1, '2017-03-01'),
-('m.williams', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Mark Williams', 'mark.williams@lseg-internal.local', 'Compliance', 'Analyst', 1, '2017-03-01'),
-('r.patel', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Ravi Patel', 'ravi.patel@lseg-internal.local', 'Risk', 'ReadOnly', 1, '2018-01-15');
+('admin', '0192023A7BBD73250516F069DF18B500', 'System Administrator', 'admin@corp-internal.local', 'IT', 'Admin', 1, '2016-06-15'),
+('stuart.m', 'E10ADC3949BA59ABBE56E057F20F883E', 'Stuart Morrison', 'stuart.morrison@corp-internal.local', 'IT', 'DataManager', 1, '2016-06-15'),
+('j.chen', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Jennifer Chen', 'jennifer.chen@corp-internal.local', 'Trading', 'Analyst', 1, '2017-03-01'),
+('m.williams', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Mark Williams', 'mark.williams@corp-internal.local', 'Compliance', 'Analyst', 1, '2017-03-01'),
+('r.patel', '5F4DCC3B5AA765D61D8327DEB882CF99', 'Ravi Patel', 'ravi.patel@corp-internal.local', 'Risk', 'ReadOnly', 1, '2018-01-15');
 
 -- Seed FTSE 100 index composition (simplified - top 10 by weight)
 INSERT INTO IndexComposition (IndexCode, IndexName, InstrumentId, RIC, Weight, SharesInIssue, FreeFloatFactor, EffectiveDate, IsActive) VALUES
@@ -218,7 +218,7 @@ INSERT INTO IndexComposition (IndexCode, IndexName, InstrumentId, RIC, Weight, S
 ('FTSE100', 'FTSE 100 Index', 3, 'HSBA.L', 0.065, 19700000000, 0.75, '2024-01-01', 1),
 ('FTSE100', 'FTSE 100 Index', 5, 'AZN.L', 0.090, 1550000000, 0.95, '2024-01-01', 1),
 ('FTSE100', 'FTSE 100 Index', 6, 'BP.L', 0.055, 19200000000, 0.88, '2024-01-01', 1),
-('FTSE100', 'FTSE 100 Index', 10, 'LSEG.L', 0.035, 560000000, 0.80, '2024-01-01', 1),
+('FTSE100', 'FTSE 100 Index', 10, 'LGEN.L', 0.035, 560000000, 0.80, '2024-01-01', 1),
 ('FTSE100', 'FTSE 100 Index', 11, 'DGE.L', 0.040, 2250000000, 0.92, '2024-01-01', 1),
 ('FTSE100', 'FTSE 100 Index', 19, 'ULVR.L', 0.060, 2540000000, 0.90, '2024-01-01', 1);
 

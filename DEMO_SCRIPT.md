@@ -1,194 +1,327 @@
-# MarketDataHub Demo Script — LSEG Prospect Meeting
+# MarketDataHub Demo Script
 
 ## Overview
 
-This demo repo is a **legacy C# ASP.NET (.NET Framework 4.6.1)** market data distribution system — the kind of app LSEG teams would realistically run on-prem. It's packed with legacy patterns and security vulnerabilities that make it perfect for demonstrating Devin's modernization capabilities.
+This demo walks through the modernization of a **realistic enterprise legacy .NET monolith** using Devin.
 
-**Demo order:**
-1. **On-Prem → Cloud Modernization** (10-15 min) — the main event
-2. **API / Event-Driven Refactoring** (5-10 min) — architectural depth
-3. **GitLab → GitHub Migration** (5 min) — quick win
-4. **Bonus: SonarQube Vulnerability Remediation** (5 min) — schedule-triggered
+The application is a real-time market data distribution system built on **.NET Framework 4.6.1** (ASP.NET MVC 5, Web API 2). It ingests price feeds via FIX 4.2, stores them across **3 SQL Server instances**, and distributes data to ~15 downstream systems via REST API and proprietary TCP protocol (port 18500).
 
----
+**What makes this hard to modernize:**
 
-## Setup Before the Demo
-
-1. Push the repo to a **GitLab** instance (or GitHub — the `.gitlab-ci.yml` is there either way)
-2. Connect it to Devin
-3. Have the prospect's cloud platform in mind (likely **Azure** given LSEG's Microsoft relationship, but AWS works too)
-
----
-
-## Demo 1: On-Prem → Cloud Modernization (Main Event)
-
-### What's in the repo that makes this compelling
-
-The app is deeply tied to on-prem infrastructure:
-- **SQL Server** on local servers (`LSEG-SQL01`, `LSEG-SQL03`) with hardcoded connection strings
-- **Network file shares** (`\\LSEG-NAS01\MarketData\...`) for tick archives, EOD exports, regulatory reports
-- **On-prem SMTP** (Exchange server at `mail.lseg-internal.local`)
-- **LDAP/Active Directory** authentication
-- **FIX protocol gateway** on internal network
-- **Proprietary TCP distribution** on port 18500
-- **IIS deployment** via MSDeploy to Windows Servers
-- **Windows Task Scheduler** for batch jobs
-
-### Suggested Devin Prompt
-
-```
-Modernize this legacy ASP.NET application for Azure cloud deployment. The app currently runs entirely on-premises with SQL Server, network file shares, LDAP authentication, and on-prem SMTP.
-
-Please:
-1. Replace on-prem SQL Server connections with Azure SQL Database, using Azure Key Vault for connection string management instead of hardcoded credentials in Web.config
-2. Replace network file share storage (\\LSEG-NAS01\...) with Azure Blob Storage for tick archives, EOD exports, and regulatory reports
-3. Replace on-prem SMTP/Exchange with Azure Communication Services or SendGrid for email notifications
-4. Replace LDAP authentication with Azure Active Directory / Microsoft Entra ID
-5. Replace hardcoded configuration in Web.config with Azure App Configuration and Key Vault references
-6. Add Azure Application Insights for monitoring and logging (replacing file-based logging to network share)
-7. Update the Dockerfile and add infrastructure-as-code (Terraform or Bicep) for the Azure resources
-8. Ensure all secrets are removed from source code and managed via Key Vault
-
-Maintain backward compatibility with the existing REST API contract (/api/MarketDataApi/*) as downstream systems depend on it.
-```
-
-### What Devin will do (talking points for the demo)
-
-- Understand the entire codebase — all 45 files, the architecture, the dependencies
-- Systematically replace each on-prem dependency with a cloud equivalent
-- Generate Terraform/Bicep IaC for Azure resources
-- Update configuration management pattern (Web.config → Azure App Config + Key Vault)
-- Create a proper secrets management approach
-- Update the CI/CD pipeline for cloud deployment
-
-### Key differentiator vs. Copilot Background Agent
-
-**Copilot** can handle a single-file task like "replace this connection string." **Devin** handles the full cross-cutting modernization — touching 20+ files, understanding the architecture, generating IaC, and testing the result. This is a multi-hour task that Devin does autonomously.
+- 3 on-premises SQL Server instances with hardcoded connection strings and passwords in `Web.config`
+- Network file share dependencies (`\\MDH-NAS01\MarketData\...`) for tick archives, EOD exports, and regulatory reports
+- On-prem SMTP (Exchange) with hardcoded email addresses throughout services
+- LDAP/Active Directory authentication with hardcoded domain and service account DN
+- FIX protocol gateway on internal network
+- Proprietary TCP distribution on port 18500
+- IIS deployment via MSDeploy to Windows Servers
+- Windows Task Scheduler for batch jobs (tick archival, EOD reports, MiFID compliance)
+- Zero test coverage beyond one trivial test class (`CryptoHelperTests.cs`)
+- MD5 password hashing, SQL injection via string concatenation, BinaryFormatter deserialization, hardcoded credentials throughout
+- FCA/MiFID II regulatory reporting tied to on-prem file shares
 
 ---
 
-## Demo 2: API / Event-Driven Refactoring
-
-### What's in the repo
-
-The `PriceFeedService.ProcessTick()` method is a synchronous bottleneck:
-1. Receives tick → 2. DB lookup → 3. Insert tick → 4. Update price → 5. Check alerts (DB query!) → 6. Send alert emails (SMTP, blocking!) → 7. Distribute to TCP clients (blocking!)
-
-All of this happens synchronously, blocking the feed thread. The code comments even acknowledge this: *"TODO: Consider async processing for large batch orders (deferred since 2018)"*
-
-### Suggested Devin Prompt
+## Infrastructure Map (On-Premises)
 
 ```
-The PriceFeedService.ProcessTick() method processes everything synchronously, causing latency during high-volume trading periods. Refactor the tick processing pipeline to be event-driven:
-
-1. Introduce Azure Service Bus (or AWS SQS/SNS) as a message broker between the feed ingestion and downstream processing
-2. Separate tick ingestion (must be fast) from alert checking, email notifications, and TCP distribution
-3. Create separate consumer services for:
-   - Alert evaluation (subscribe to price updates, check thresholds, trigger notifications)
-   - Email notifications (subscribe to alert events, send asynchronously)
-   - TCP distribution (subscribe to tick events, fan out to connected clients)
-4. Add dead letter queues for failed processing
-5. Ensure the REST API remains synchronous for backward compatibility
-
-The goal is to decouple the critical path (tick ingestion → DB write) from non-critical processing (alerts, emails, TCP fan-out).
+                    ┌──────────────────┐
+                    │  FIX Gateway     │
+                    │  (fix-gw01)      │
+                    └────────┬─────────┘
+                             │ FIX 4.2
+         ┌───────────────────▼────────────────────┐
+         │           MarketDataHub                 │
+         │          (IIS / ASP.NET)                │
+         │                                        │
+         │  PriceFeedService ─► DatabaseHelper     │
+         │  IndexCalcService ─► ComplianceReport   │
+         │  FileExportService ─► NotificationSvc   │
+         └──┬───┬───┬───┬───┬───┬───┬───┬───┬─────┘
+            │   │   │   │   │   │   │   │   │
+            ▼   │   │   ▼   │   │   ▼   │   ▼
+  ┌──────────┐ │   │ ┌───────┐ │ ┌──────┐ ┌──────────┐
+  │MDH-SQL01 │ │   │ │ SMTP  │ │ │ LDAP │ │Bloomberg │
+  │(Primary) │ │   │ │Exchng │ │ │dc01  │ │bbg-api   │
+  └──────────┘ │   │ └───────┘ │ └──────┘ └──────────┘
+               ▼   │           ▼
+         ┌──────────┐   ┌──────────┐    ┌──────────┐
+         │MDH-SQL03 │   │MDH-SQL02 │    │MDH-NAS01 │
+         │(Ticks)   │   │(Reports) │    │(Shares)  │
+         └──────────┘   └──────────┘    └──────────┘
 ```
 
-### Why this is compelling for LSEG
-
-This directly addresses a real architectural pattern they face — decoupling high-throughput market data feeds from downstream processing. Event-driven architecture is core to modern exchange systems.
+All servers on `corp-internal.local` domain. VPN required for remote access.
 
 ---
 
-## Demo 3: GitLab → GitHub Migration
+## 7-Step Demo Flow
 
-### What's in the repo
+| Step | Title | Time | Mode |
+|------|-------|------|------|
+| 1 | Ingest the repo | 2 min | Live |
+| 2 | Dependency map | 3 min | Live |
+| 3 | Expose: zero test coverage | 2 min | Live |
+| 4 | Write unit tests (on-prem) | 3 min | Pre-baked |
+| 5 | Define Azure target state | 3 min | Live |
+| 6 | Devin flags the error | 3 min | Live |
+| 7 | Migrate & retest | 2 min | Pre-baked |
 
-- `.gitlab-ci.yml` with full pipeline (build, test, security, quality, deploy)
-- `.gitlab/merge_request_templates/default.md` with LSEG-specific template
-- GitLab-specific CI features (SAST template include, environment URLs, `only:` clauses)
-- References to GitLab CI variables (`$SONAR_AUTH_TOKEN`, etc.)
-- MSDeploy-based deployment to IIS servers
-
-### Suggested Devin Prompt
-
-```
-Migrate this project's CI/CD from GitLab to GitHub:
-
-1. Convert .gitlab-ci.yml to equivalent GitHub Actions workflows
-2. Convert the GitLab merge request template to a GitHub pull request template
-3. Update any GitLab-specific CI variable references to GitHub Actions secrets
-4. Maintain all existing pipeline stages: build, test, security scanning, SonarQube analysis, and deployment
-5. Remove GitLab-specific files after migration
-6. Update the README to reference GitHub Actions instead of GitLab CI
-```
-
-### What makes this a quick win
-
-It's a clear, visual before/after. The `.gitlab-ci.yml` disappears, `.github/workflows/` appears, and everything maps cleanly. Great way to close the demo.
+**Total: ~18 minutes**
 
 ---
 
-## Bonus Demo: SonarQube Vulnerability Remediation (Scheduled)
+## Step 1: Ingest the Repo (DeepWiki)
 
-### Setup
+**Action:** Point Devin at the repo. Show DeepWiki building understanding of the codebase instantly.
 
-This is the "schedule" demo the prospect asked about. Set up a Devin schedule to periodically scan and fix SonarQube findings.
+**Talking points while it loads:**
 
-### What's in the repo (intentional vulnerabilities)
+- "This is a real-world .NET Framework 4.6.1 monolith — ASP.NET MVC 5 with Web API 2"
+- "It handles real-time market data from the London Stock Exchange via FIX 4.2 protocol"
+- "The app has 3 SQL Server databases, network file shares, LDAP auth, on-prem SMTP — all hardcoded"
+- "There's a proprietary TCP distribution layer pushing ticks to risk engines on port 18500"
+- "This is the kind of app that sits in every enterprise — too critical to stop, too risky to touch"
 
-| Vulnerability | File | CWE |
-|---|---|---|
-| SQL Injection (string concat) | `DatabaseHelper.cs` | CWE-89 |
-| MD5 password hashing | `CryptoHelper.cs` | CWE-327 |
-| Hardcoded passwords | `Web.config`, source code | CWE-798 |
-| BinaryFormatter deserialization | `DatabaseHelper.cs` | CWE-502 |
-| CORS wildcard `*` | `Web.config` | CWE-942 |
-| Password logging | `AuthController.cs` | CWE-200 |
-| Path traversal in downloads | `ReportsController.cs` | CWE-22 |
-| Debug mode in production | `Web.config` | CWE-489 |
-| Weak random (System.Random) | `CryptoHelper.cs` | CWE-330 |
-| Insecure SMTP (no SSL) | `NotificationService.cs` | CWE-319 |
+**What Devin understands:**
 
-### Suggested Devin Prompt (for scheduled session)
-
-```
-Review the SonarQube findings for this repository and fix the critical and blocker security vulnerabilities:
-
-1. Replace all SQL string concatenation with parameterized queries to fix SQL injection
-2. Replace MD5 password hashing with bcrypt or PBKDF2
-3. Remove all hardcoded credentials from source code and Web.config — use environment variables or a secrets manager
-4. Replace BinaryFormatter with JSON serialization for caching
-5. Fix CORS configuration to restrict allowed origins
-6. Remove password logging from AuthController
-7. Add path validation to file download endpoints to prevent path traversal
-8. Disable debug mode in production Web.config
-9. Replace System.Random with System.Security.Cryptography.RandomNumberGenerator
-10. Enable TLS for SMTP connections
-
-Create a PR with all fixes and document each change.
-```
+- The full architecture: FIX ingestion → SQL persistence → TCP/REST distribution
+- All infrastructure dependencies (3 SQL instances, NAS, SMTP, LDAP, Bloomberg, FCA)
+- The security vulnerabilities (SQL injection, MD5, hardcoded creds, BinaryFormatter)
+- The ETL batch jobs (tick archival, EOD summary, compliance reports)
 
 ---
 
-## Key Talking Points vs. Copilot Background Agent
+## Step 2: Dependency Map
 
-| Capability | Copilot Background Agent | Devin |
-|---|---|---|
-| Single-file bug fix | ✅ | ✅ |
-| Multi-file refactoring | ❌ Limited | ✅ Full codebase |
-| Architecture understanding | ❌ | ✅ Reads entire repo |
-| Generate IaC (Terraform/Bicep) | ❌ | ✅ |
-| CI/CD pipeline migration | ❌ | ✅ |
-| Security vulnerability remediation | ❌ | ✅ Systematic |
-| Scheduled/recurring tasks | ❌ | ✅ Devin Schedules |
-| Cross-cutting modernization | ❌ | ✅ 20+ files in one session |
-| Event-driven architecture design | ❌ | ✅ |
+**Prompt Devin:**
 
-### The Cloud Adoption Angle
+```
+Analyze this codebase and identify every external system, service, protocol,
+and infrastructure dependency. Map each dependency to the specific file(s)
+and line(s) where it's referenced. Group them by category.
+```
 
-The prospect cares about **driving public cloud adoption to her teams' platforms**. This demo shows that Devin can:
-1. **Accelerate migration** — What would take a team weeks, Devin does in hours
-2. **Reduce risk** — Systematic, no files missed, IaC generated
-3. **Enable self-service** — Teams can point Devin at any legacy repo and get a cloud-ready PR
-4. **Continuous compliance** — Scheduled Devin sessions scan and fix vulnerabilities automatically
-5. **Platform adoption** — Devin generates the Azure/cloud resources using the platform team's standards
+**Expected output — Devin should discover:**
+
+| Category | Dependency | Details |
+|----------|-----------|---------|
+| Database | MDH-SQL01 (Primary) | `Web.config:76` — `Server=MDH-SQL01\MSSQLSERVER` |
+| Database | MDH-SQL03 (Tick Store) | `Web.config:81` — `Server=MDH-SQL03\TICKDATA` |
+| Database | MDH-SQL02 (Reporting) | `Web.config:86` — `Server=MDH-SQL02\MSSQLSERVER` |
+| Protocol | FIX 4.2 Gateway | `Web.config:11` — `fix-gw01.corp-internal.local:9876` |
+| Protocol | TCP Distribution | `PriceFeedService.cs` — port 18500 |
+| Feed | Refinitiv/Reuters | `Web.config:19` — `refeed01.corp-internal.local` |
+| Feed | Bloomberg API | `Web.config:68` — `bbg-api.corp-internal.local` |
+| Auth | LDAP/Active Directory | `Web.config:50-52` — `dc01.corp-internal.local:389` |
+| Email | SMTP (Exchange) | `Web.config:24` — `mail.corp-internal.local:25` |
+| Storage | Network Share (NAS) | `Web.config:31-34,41,61` — `\\MDH-NAS01\MarketData\*` |
+| Regulatory | FCA Reporting | `Web.config:59` — `reg-report.corp-internal.local:7070` |
+| Index | FTSE Calc Engine | `Web.config:64` — `idx-calc01.corp-internal.local:6060` |
+| Deployment | IIS on Windows Server | `deployment-guide.md` — MDH-WEB-PROD01/02 |
+
+**Key talking point:** "Devin just mapped 13 distinct infrastructure dependencies across the codebase — in seconds. A human doing this manually would take a full day of code archaeology."
+
+---
+
+## Step 3: Expose — No Tests Exist
+
+**Prompt Devin:**
+
+```
+What is the current test coverage for this application?
+How many services, controllers, and helpers have unit tests?
+```
+
+**What Devin discovers:**
+
+- `MarketDataHub.Tests/` contains **only** `CryptoHelperTests.cs`
+- That single test file covers only the `CryptoHelper` utility class
+- **Zero coverage** on:
+  - 6 services (`PriceFeedService`, `FileExportService`, `ComplianceReportService`, `IndexCalculationService`, `NotificationService`, `ConfigManager`)
+  - 6 controllers (`AuthController`, `DashboardController`, `InstrumentsController`, `PriceFeedController`, `ReportsController`, `MarketDataApiController`)
+  - 1 database helper (`DatabaseHelper.cs`)
+  - 1 protocol client (`FixProtocolClient.cs`)
+
+**Let this land with the customer.** Zero test coverage on a critical financial system. This is the reality for most legacy enterprise apps.
+
+**Key talking point:** "This application processes real-time market data for trading desks and risk engines — and it has exactly one test file. This is the starting point for most enterprise modernization projects."
+
+---
+
+## Step 4: Write Unit Tests (Pre-Baked)
+
+> **Run this step overnight. Walk through the MR during the demo.**
+
+**Prompt Devin:**
+
+```
+Write comprehensive unit tests for the following services in this .NET Framework 4.6.1 application:
+
+1. DatabaseHelper.cs — test SQL query construction, connection handling, caching logic
+2. PriceFeedService.cs — test tick processing, alert threshold checking, TCP distribution
+3. FileExportService.cs — test CSV export, fixed-width format generation, clearing file output
+4. ComplianceReportService.cs — test MiFID II report generation, best execution analysis
+5. IndexCalculationService.cs — test FTSE index calculation, component weighting
+6. NotificationService.cs — test alert email construction, severity routing
+
+Use MSTest (the existing test framework). Mock all external dependencies
+(SQL connections, SMTP, file system, TCP sockets). Tests should pass against
+the current on-prem configuration.
+```
+
+**What to show in the demo:**
+
+- Walk through the generated test project structure
+- Show test mocking strategy (how Devin isolated the SQL, SMTP, filesystem dependencies)
+- Highlight: "These tests validate the current behavior — they're our safety net for the migration"
+- Show test results: all passing against on-prem config
+
+---
+
+## Step 5: Define Azure Target State (with Deliberate Breaking Change)
+
+**Prompt Devin:**
+
+```
+We need to migrate this application from on-premises to Azure. Here is the
+target architecture specification:
+
+## Migration Target Map
+
+| Current (On-Prem) | Target (Azure) |
+|---|---|
+| SQL Server 2017 (MDH-SQL01, MDH-SQL02, MDH-SQL03) | Azure SQL Database |
+| Network shares (\\MDH-NAS01\MarketData\...) | Azure Blob Storage |
+| LDAP / Active Directory | Azure AD / Microsoft Entra ID |
+| SMTP Exchange (mail.corp-internal.local) | Azure Communication Services |
+| Windows Task Scheduler (EOD, archival, compliance) | Azure Functions + Azure Data Factory |
+| IIS on Windows Server | Azure App Service or AKS |
+| GitLab CI (.gitlab-ci.yml) | GitHub Actions |
+| Hardcoded credentials in Web.config | Azure Key Vault |
+| File-based logging (\\MDH-NAS01\...\Logs) | Azure Application Insights |
+| FCA regulatory reports to file share | Azure Blob Storage + Event Grid |
+
+## Connection String Format
+
+All Azure SQL Database connections must use this format:
+  Server=tcp:mdh-prod.database.windows.net,1433;
+  Database=MarketDataHub;
+  Authentication=Active Directory Default;
+  Encrypt=True;
+  TrustServerCertificate=False;
+
+Please analyze the codebase against this specification and create a
+migration plan. Identify any incompatibilities before starting.
+```
+
+> **THE DELIBERATE BREAKING CHANGE:**
+>
+> The spec says Azure SQL connections use `Server=tcp:mdh-prod.database.windows.net,1433`
+> with `Authentication=Active Directory Default`.
+>
+> But `DatabaseHelper.cs` constructs connections using:
+> ```csharp
+> Server=MDH-SQL01\MSSQLSERVER;User Id=mdh_app;Password=Sql_Mkt!D4ta2017
+> ```
+>
+> The existing code:
+> 1. Uses **named SQL Server instances** (`\MSSQLSERVER`, `\TICKDATA`) — Azure SQL Database doesn't support named instances
+> 2. Uses **SQL authentication** (`User Id` / `Password`) — the spec requires Azure AD authentication (`Authentication=Active Directory Default`)
+> 3. Parses connection strings by splitting on `\` to extract instance names — `tcp:mdh-prod.database.windows.net,1433` has no backslash, so the parsing logic will break
+> 4. Uses `Max Pool Size=500` for tick data — Azure SQL Database has connection pooling limits that differ from on-prem
+
+---
+
+## Step 6: Devin Flags the Error
+
+**What Devin should identify:**
+
+Before executing any migration, Devin analyzes the spec against the codebase and flags:
+
+1. **Connection string format mismatch:**
+   - Current: `Server=MDH-SQL01\MSSQLSERVER;Database=MarketDataHub;User Id=mdh_app;Password=...`
+   - Target: `Server=tcp:mdh-prod.database.windows.net,1433;Database=MarketDataHub;Authentication=Active Directory Default`
+   - Problem: `DatabaseHelper.cs` parses connection strings expecting the `Server\Instance` format. The Azure SQL format `tcp:hostname,port` will fail the existing parsing logic.
+
+2. **Named instance incompatibility:**
+   - Current code references `MDH-SQL03\TICKDATA` as a named instance
+   - Azure SQL Database does not support named instances
+   - The tick data store needs a separate Azure SQL Database, not a named instance on the same server
+
+3. **Authentication model change:**
+   - Current: SQL authentication with `User Id` and `Password` embedded in connection strings
+   - Target: Azure AD authentication with `Authentication=Active Directory Default`
+   - `DatabaseHelper.cs` would need to use `DefaultAzureCredential` instead of password-based `SqlConnection`
+
+**Key talking point:** "Devin caught the incompatibility *before* writing a single line of migration code. A junior developer would have started migrating, hit this error in testing, and burned hours debugging. Devin reasons about the spec against the code."
+
+---
+
+## Step 7: Run the Migration, Run Tests Again
+
+> **Pre-bake this step. Walk through the result.**
+
+**What Devin does:**
+
+1. Fixes the identified incompatibilities (updates `DatabaseHelper.cs` to handle both connection string formats, adds `Azure.Identity` for Managed Identity auth)
+2. Replaces `\\MDH-NAS01\MarketData\...` paths with Azure Blob Storage SDK calls
+3. Replaces LDAP authentication with Microsoft Entra ID via MSAL
+4. Replaces SMTP with Azure Communication Services
+5. Generates Azure Key Vault integration for all secrets
+6. Adds `Azure.Monitor.OpenTelemetry` for Application Insights
+7. Generates Terraform/Bicep for Azure resources
+8. Updates CI/CD from GitLab CI to GitHub Actions
+
+**Then runs the tests again:**
+
+- Tests that were passing against on-prem config should now pass against Azure config
+- Any test failures highlight migration issues that need attention
+- Show the before/after: same tests, different infrastructure
+
+---
+
+## Azure Migration Target Map (Reference)
+
+| Component | Current (On-Prem) | Azure Target |
+|-----------|-------------------|-------------|
+| Primary DB | SQL Server 2017 on MDH-SQL01 | Azure SQL Database (mdh-prod) |
+| Tick Store | SQL Server 2017 on MDH-SQL03 | Azure SQL Database (mdh-ticks) |
+| Reporting DB | SQL Server 2017 on MDH-SQL02 | Azure SQL Database (mdh-reporting, read replica) |
+| File Storage | `\\MDH-NAS01\MarketData\*` | Azure Blob Storage (`mdhstorage`) |
+| Authentication | LDAP on `dc01.corp-internal.local` | Microsoft Entra ID (Azure AD) |
+| Email | Exchange on `mail.corp-internal.local` | Azure Communication Services |
+| Secrets | Hardcoded in `Web.config` | Azure Key Vault (`mdh-vault`) |
+| Logging | File on `\\MDH-NAS01\...\Logs\mdh.log` | Azure Application Insights |
+| Batch Jobs | Windows Task Scheduler | Azure Functions (Timer trigger) |
+| Web Hosting | IIS on MDH-WEB-PROD01/02 | Azure App Service (or AKS) |
+| CI/CD | GitLab CI (`.gitlab-ci.yml`) | GitHub Actions |
+| FIX Gateway | `fix-gw01.corp-internal.local` | Azure VNet + ExpressRoute (keep FIX on-prem initially) |
+| Regulatory | FCA reports to `\\MDH-NAS01\...\Regulatory` | Azure Blob Storage + Event Grid notification |
+| Index Calc | `idx-calc01.corp-internal.local` | Azure Functions (HTTP trigger) |
+| Bloomberg | `bbg-api.corp-internal.local` | Azure VNet integration (keep Bloomberg on-prem initially) |
+
+---
+
+## Tips for Presenters
+
+### What to run live vs. pre-baked
+
+- **Steps 1-3** (Ingest, Dependency Map, Expose): Run live. These are fast and impressive.
+- **Step 4** (Write tests): Pre-bake overnight. Walk through the MR.
+- **Step 5-6** (Define target + Flag error): Run live. The "catching the error" moment is the climax.
+- **Step 7** (Migration): Pre-bake. Walk through the diff and test results.
+
+### Key messages
+
+1. **"Devin understands the whole system, not just individual files"** — The dependency map proves this.
+2. **"Devin catches errors before they become production incidents"** — The breaking change detection proves this.
+3. **"What would take a team weeks, Devin does in hours"** — The full migration scope proves this.
+4. **"Tests are the safety net"** — Writing tests first, then migrating, then retesting — this is the responsible way to modernize.
+
+### If asked: "Why not just use Copilot?"
+
+- Copilot can fix a single file. Devin handles the full cross-cutting modernization — 20+ files, architecture understanding, IaC generation, test writing, and error detection.
+- Copilot can't reason about infrastructure specs against codebase patterns.
+- Copilot doesn't generate Terraform/Bicep or migrate CI/CD pipelines.
+- Copilot doesn't catch the Azure SQL connection string format mismatch — it only sees the file you're editing.

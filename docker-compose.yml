@@ -4,7 +4,7 @@
 # 
 # Prerequisites:
 #   - Docker Desktop for Windows with Windows Containers mode
-#   - Access to LSEG internal network for feed connectivity
+#   - Access to MDH internal network for feed connectivity
 #
 # Usage:
 #   docker-compose up -d
@@ -13,7 +13,7 @@
 version: '3.7'
 
 services:
-  # SQL Server - Primary database (mirrors LSEG-SQL01)
+  # SQL Server - Primary database (mirrors MDH-SQL01)
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2017-latest
     container_name: mdh-sqlserver
@@ -29,7 +29,7 @@ services:
     networks:
       - mdh-network
 
-  # SQL Server - Tick Data Store (mirrors LSEG-SQL03)
+  # SQL Server - Tick Data Store (mirrors MDH-SQL03)
   sqlserver-ticks:
     image: mcr.microsoft.com/mssql/server:2017-latest
     container_name: mdh-sqlserver-ticks

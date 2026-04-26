@@ -15,7 +15,7 @@ namespace MarketDataHub.Services
     /// For FTSE 100/250, the on-prem calc engine (idx-calc01) provides the official
     /// divisor, but we fall back to our own calculation if the engine is unreachable.
     /// 
-    /// The official FTSE index values published by LSEG use a more complex methodology
+    /// The official FTSE index values published by the exchange use a more complex methodology
     /// including free-float adjustments. This is an internal approximation only.
     /// </summary>
     public class IndexCalculationService

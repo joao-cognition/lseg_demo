@@ -69,7 +69,7 @@ namespace MarketDataHub.Services
 
         /// <summary>
         /// Generate fixed-width format export for legacy clearing systems.
-        /// Format spec: LSEG-CLR-001 Rev 3 (2014)
+        /// Format spec: MDH-CLR-001 Rev 3 (2014)
         /// </summary>
         public static string ExportFixedWidthFormat(DateTime tradeDate)
         {
@@ -78,7 +78,7 @@ namespace MarketDataHub.Services
                 StringBuilder fw = new StringBuilder();
 
                 // Header record
-                fw.AppendLine("HDR" + "LSEG-MDH".PadRight(20) + tradeDate.ToString("yyyyMMdd") + DateTime.Now.ToString("HHmmss"));
+                fw.AppendLine("HDR" + "MDH-SYS".PadRight(20) + tradeDate.ToString("yyyyMMdd") + DateTime.Now.ToString("HHmmss"));
 
                 DataTable instruments = DatabaseHelper.GetInstruments();
                 int recordCount = 0;
