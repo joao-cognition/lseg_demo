@@ -61,8 +61,8 @@ namespace MarketDataHub.Services
         {
             string[] opsTeam = new string[]
             {
-                "ops-team@lseg-internal.local",
-                "mdh-oncall@lseg-internal.local"
+                "ops-team@corp-internal.local",
+                "mdh-oncall@corp-internal.local"
             };
 
             string subject = "[" + severity + "] MarketDataHub Alert - " + ConfigManager.SmtpFromAddress;
@@ -96,7 +96,7 @@ namespace MarketDataHub.Services
                 "</table></body></html>",
                 tickCount, alertsTriggered, feedDisconnects, DateTime.Today.ToString("dd MMMM yyyy"));
 
-            string[] mgmt = { "head-of-data@lseg-internal.local", "cto@lseg-internal.local" };
+            string[] mgmt = { "head-of-data@corp-internal.local", "cto@corp-internal.local" };
             foreach (string recipient in mgmt)
             {
                 try { SendEmail(recipient, subject, body); } catch { }

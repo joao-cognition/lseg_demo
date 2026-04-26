@@ -14,7 +14,7 @@ namespace MarketDataHub.Utils
     public class CryptoHelper
     {
         // Shared secret for generating API keys and auth tokens
-        private static readonly string API_SECRET = "MDH-2016-LSEG-SecretKey-Production!!";
+        private static readonly string API_SECRET = "MDH-2016-CORP-SecretKey-Production!!";
 
         /// <summary>
         /// Hash a password using MD5. Used for all user authentication.

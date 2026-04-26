@@ -20,7 +20,7 @@ namespace MarketDataHub.Services
     /// - Market Data Quality - tick completeness and latency
     /// 
     /// Reports must be retained for minimum 5 years (7 years for transaction data).
-    /// All reports are archived on the network share under \\LSEG-NAS01\MarketData\Regulatory
+    /// All reports are archived on the network share under \\MDH-NAS01\MarketData\Regulatory
     /// </summary>
     public class ComplianceReportService
     {

@@ -23,7 +23,7 @@ msbuild MarketDataHub.sln /p:Configuration=Release /p:DeployOnBuild=true
 
 ```powershell
 # Run against primary SQL Server
-sqlcmd -S LSEG-SQL01\MSSQLSERVER -d MarketDataHub -i scripts/migration-XXX.sql
+sqlcmd -S MDH-SQL01\MSSQLSERVER -d MarketDataHub -i scripts/migration-XXX.sql
 ```
 
 #### 3. Deploy to Web Servers
@@ -31,33 +31,33 @@ sqlcmd -S LSEG-SQL01\MSSQLSERVER -d MarketDataHub -i scripts/migration-XXX.sql
 ```powershell
 # Deploy to PROD01 first (canary)
 msdeploy -verb:sync -source:contentPath="MarketDataHub/bin/Release/" `
-  -dest:contentPath="D:\WebApps\MarketDataHub",computerName="LSEG-WEB-PROD01"
+  -dest:contentPath="D:\WebApps\MarketDataHub",computerName="MDH-WEB-PROD01"
 
 # Restart app pool
-Invoke-Command -ComputerName LSEG-WEB-PROD01 -ScriptBlock {
+Invoke-Command -ComputerName MDH-WEB-PROD01 -ScriptBlock {
     Restart-WebAppPool "MarketDataHub"
 }
 
 # Verify health check
-Invoke-WebRequest -Uri "http://LSEG-WEB-PROD01/api/MarketDataApi/Health"
+Invoke-WebRequest -Uri "http://MDH-WEB-PROD01/api/MarketDataApi/Health"
 
 # If healthy, deploy to PROD02
 msdeploy -verb:sync -source:contentPath="MarketDataHub/bin/Release/" `
-  -dest:contentPath="D:\WebApps\MarketDataHub",computerName="LSEG-WEB-PROD02"
+  -dest:contentPath="D:\WebApps\MarketDataHub",computerName="MDH-WEB-PROD02"
 
-Invoke-Command -ComputerName LSEG-WEB-PROD02 -ScriptBlock {
+Invoke-Command -ComputerName MDH-WEB-PROD02 -ScriptBlock {
     Restart-WebAppPool "MarketDataHub"
 }
 ```
 
 #### 4. Post-Deployment Verification
 
-- [ ] Web dashboard loads: http://mdh.lseg-internal.local
+- [ ] Web dashboard loads: http://mdh.corp-internal.local
 - [ ] FIX feed connected (green indicator on dashboard)
 - [ ] API health check returns 200
 - [ ] TCP distribution port (18500) accepting connections
 - [ ] Downstream systems receiving data (check with risk/trading teams)
-- [ ] No errors in log file: \\LSEG-NAS01\MarketData\Logs\mdh.log
+- [ ] No errors in log file: \\MDH-NAS01\MarketData\Logs\mdh.log
 
 ### Rollback Procedure
 
@@ -78,7 +78,7 @@ Invoke-Command -ComputerName LSEG-WEB-PROD02 -ScriptBlock {
 
 | Role | Contact | Phone |
 |------|---------|-------|
-| On-call DBA | dba-oncall@lseg-internal.local | ext. 4521 |
-| Network Ops | noc@lseg-internal.local | ext. 4500 |
-| Feed Support | feed-support@lseg-internal.local | ext. 4530 |
-| Compliance | compliance-ops@lseg-internal.local | ext. 4600 |
+| On-call DBA | dba-oncall@corp-internal.local | ext. 4521 |
+| Network Ops | noc@corp-internal.local | ext. 4500 |
+| Feed Support | feed-support@corp-internal.local | ext. 4530 |
+| Compliance | compliance-ops@corp-internal.local | ext. 4600 |

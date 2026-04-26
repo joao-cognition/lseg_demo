@@ -116,7 +116,7 @@ namespace MarketDataHub.Controllers
         private bool AuthenticateViaLdap(string username, string password)
         {
             string ldapPath = ConfigManager.LdapServer + "/" + ConfigManager.LdapBaseDn;
-            using (DirectoryEntry entry = new DirectoryEntry(ldapPath, "LSEG\\" + username, password))
+            using (DirectoryEntry entry = new DirectoryEntry(ldapPath, "CORP\\" + username, password))
             {
                 using (DirectorySearcher searcher = new DirectorySearcher(entry))
                 {

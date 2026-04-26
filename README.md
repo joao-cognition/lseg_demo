@@ -14,15 +14,15 @@ Internal application for ingesting, storing, and distributing real-time market d
                              │ FIX 4.2
                     ┌────────▼─────────┐         ┌─────────────────┐
                     │  MarketDataHub   │────────► │  SQL Server     │
-                    │  (IIS/ASP.NET)   │         │  (LSEG-SQL01)   │
+                    │  (IIS/ASP.NET)   │         │  (MDH-SQL01)   │
                     │                  │         └─────────────────┘
                     │  - Price Feed    │         ┌─────────────────┐
                     │  - Index Calc    │────────► │  Tick Store     │
-                    │  - EOD Export    │         │  (LSEG-SQL03)   │
+                    │  - EOD Export    │         │  (MDH-SQL03)   │
                     │  - Compliance    │         └─────────────────┘
                     │  - Alert Engine  │         ┌─────────────────┐
                     └────┬───┬───┬─────┘────────► │  Network Share  │
-                         │   │   │               │  (LSEG-NAS01)  │
+                         │   │   │               │  (MDH-NAS01)  │
                          │   │   │               └─────────────────┘
               ┌──────────┘   │   └──────────┐
               ▼              ▼              ▼
@@ -46,9 +46,9 @@ Internal application for ingesting, storing, and distributing real-time market d
 ## Prerequisites
 
 - Visual Studio 2015 or later with ASP.NET workload
-- SQL Server 2017 (or access to LSEG-SQL01/SQL02/SQL03)
+- SQL Server 2017 (or access to MDH-SQL01/SQL02/SQL03)
 - .NET Framework 4.6.1 SDK
-- Network access to `lseg-internal.local` domain (VPN required for remote)
+- Network access to `corp-internal.local` domain (VPN required for remote)
 
 ## Quick Start (Development)
 
@@ -117,11 +117,11 @@ VOD.L|72.34|72.38|72.36|15000|2024-01-15 14:32:15.123\n
 See [Deployment Guide](docs/deployment-guide.md) for production deployment instructions.
 
 ### Production Servers
-- **Web**: LSEG-WEB-PROD01, LSEG-WEB-PROD02 (IIS, load balanced)
-- **DB Primary**: LSEG-SQL01 (MarketDataHub database)
-- **DB Tick Store**: LSEG-SQL03 (TickStore database, high I/O)
-- **DB Reporting**: LSEG-SQL02 (Read replica)
-- **File Share**: \\LSEG-NAS01\MarketData
+- **Web**: MDH-WEB-PROD01, MDH-WEB-PROD02 (IIS, load balanced)
+- **DB Primary**: MDH-SQL01 (MarketDataHub database)
+- **DB Tick Store**: MDH-SQL03 (TickStore database, high I/O)
+- **DB Reporting**: MDH-SQL02 (Read replica)
+- **File Share**: \\MDH-NAS01\MarketData
 
 ## CI/CD
 
@@ -161,4 +161,4 @@ The following issues are flagged by SonarQube and need remediation:
 
 ## License
 
-Internal use only. Property of LSEG Market Data Services.
+Internal use only. Property of Market Data Services.
