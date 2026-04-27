@@ -73,6 +73,19 @@
     <Compile Include="Utils\CryptoHelper.cs" />
     <Compile Include="Utils\ConfigManager.cs" />
     <Compile Include="Utils\FixProtocolClient.cs" />
+    <Compile Include="Interfaces\IDatabaseHelper.cs" />
+    <Compile Include="Interfaces\IConfigProvider.cs" />
+    <Compile Include="Interfaces\IAppLogger.cs" />
+    <Compile Include="Interfaces\INotificationService.cs" />
+    <Compile Include="Interfaces\IFileSystem.cs" />
+    <Compile Include="Interfaces\IHttpClient.cs" />
+    <Compile Include="Interfaces\IFixProtocolClient.cs" />
+    <Compile Include="Interfaces\Impl\DatabaseHelperWrapper.cs" />
+    <Compile Include="Interfaces\Impl\ConfigProviderWrapper.cs" />
+    <Compile Include="Interfaces\Impl\AppLoggerWrapper.cs" />
+    <Compile Include="Interfaces\Impl\FileSystemWrapper.cs" />
+    <Compile Include="Interfaces\Impl\HttpClientWrapper.cs" />
+    <Compile Include="Interfaces\Impl\FixProtocolClientWrapper.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Web.config" />

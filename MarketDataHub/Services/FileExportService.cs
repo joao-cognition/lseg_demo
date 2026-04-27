@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using System.IO;
 using System.Text;
+using MarketDataHub.Interfaces;
 using MarketDataHub.Data;
 using MarketDataHub.Utils;
 
@@ -19,25 +20,37 @@ namespace MarketDataHub.Services
     /// </summary>
     public class FileExportService
     {
+        private readonly IDatabaseHelper _db;
+        private readonly IConfigProvider _config;
+        private readonly IAppLogger _logger;
+        private readonly IFileSystem _fileSystem;
+
+        public FileExportService(IDatabaseHelper db, IConfigProvider config, IAppLogger logger, IFileSystem fileSystem)
+        {
+            _db = db;
+            _config = config;
+            _logger = logger;
+            _fileSystem = fileSystem;
+        }
+
         /// <summary>
         /// Generate end-of-day CSV export. Called at 16:45 London time by Windows Task Scheduler.
         /// </summary>
-        public static string ExportEndOfDayCsv(DateTime tradeDate)
+        public string ExportEndOfDayCsv(DateTime tradeDate)
         {
             try
             {
                 string dateStr = tradeDate.ToString("yyyy-MM-dd");
-                DataTable eodData = DatabaseHelper.GetEndOfDayData("*", 0);  // All instruments for today
 
                 StringBuilder csv = new StringBuilder();
                 csv.AppendLine("ISIN,SEDOL,RIC,Ticker,InstrumentName,Exchange,Currency,Open,High,Low,Close,AdjClose,Volume,VWAP,TradeCount,Turnover,TradeDate");
 
                 // Get all instruments with today's EOD data
-                DataTable instruments = DatabaseHelper.GetInstruments();
+                DataTable instruments = _db.GetInstruments();
                 foreach (DataRow row in instruments.Rows)
                 {
                     string ric = row["RIC"].ToString();
-                    DataTable eod = DatabaseHelper.GetEndOfDayData(ric, 1);
+                    DataTable eod = _db.GetEndOfDayData(ric, 1);
 
                     if (eod.Rows.Count > 0)
                     {
@@ -54,15 +67,15 @@ namespace MarketDataHub.Services
 
                 // Save to network share
                 string fileName = "EOD_LSE_" + tradeDate.ToString("yyyyMMdd") + ".csv";
-                string filePath = Path.Combine(ConfigManager.EndOfDayPath, fileName);
-                File.WriteAllText(filePath, csv.ToString());
+                string filePath = Path.Combine(_config.EndOfDayPath, fileName);
+                _fileSystem.WriteAllText(filePath, csv.ToString());
 
-                MvcApplication.WriteLog("EOD CSV exported: " + filePath);
+                _logger.WriteLog("EOD CSV exported: " + filePath);
                 return filePath;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("EOD CSV export failed: " + ex.ToString());
+                _logger.WriteLog("EOD CSV export failed: " + ex.ToString());
                 return null;
             }
         }
@@ -71,7 +84,7 @@ namespace MarketDataHub.Services
         /// Generate fixed-width format export for legacy clearing systems.
         /// Format spec: MDH-CLR-001 Rev 3 (2014)
         /// </summary>
-        public static string ExportFixedWidthFormat(DateTime tradeDate)
+        public string ExportFixedWidthFormat(DateTime tradeDate)
         {
             try
             {
@@ -80,13 +93,13 @@ namespace MarketDataHub.Services
                 // Header record
                 fw.AppendLine("HDR" + "MDH-SYS".PadRight(20) + tradeDate.ToString("yyyyMMdd") + DateTime.Now.ToString("HHmmss"));
 
-                DataTable instruments = DatabaseHelper.GetInstruments();
+                DataTable instruments = _db.GetInstruments();
                 int recordCount = 0;
 
                 foreach (DataRow row in instruments.Rows)
                 {
                     string ric = row["RIC"].ToString();
-                    DataTable eod = DatabaseHelper.GetEndOfDayData(ric, 1);
+                    DataTable eod = _db.GetEndOfDayData(ric, 1);
                     if (eod.Rows.Count > 0)
                     {
                         DataRow e = eod.Rows[0];
@@ -108,15 +121,15 @@ namespace MarketDataHub.Services
                 fw.AppendLine("TRL" + recordCount.ToString("00000000"));
 
                 string fileName = "CLR_" + tradeDate.ToString("yyyyMMdd") + ".dat";
-                string filePath = Path.Combine(ConfigManager.EndOfDayPath, fileName);
-                File.WriteAllText(filePath, fw.ToString());
+                string filePath = Path.Combine(_config.EndOfDayPath, fileName);
+                _fileSystem.WriteAllText(filePath, fw.ToString());
 
-                MvcApplication.WriteLog("Fixed-width export completed: " + filePath + " (" + recordCount + " records)");
+                _logger.WriteLog("Fixed-width export completed: " + filePath + " (" + recordCount + " records)");
                 return filePath;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Fixed-width export failed: " + ex.ToString());
+                _logger.WriteLog("Fixed-width export failed: " + ex.ToString());
                 return null;
             }
         }
@@ -125,7 +138,7 @@ namespace MarketDataHub.Services
         /// Export tick data archive for a specific date. Compressed CSV stored on network share.
         /// Used for regulatory data retention (7 year requirement under MiFID II).
         /// </summary>
-        public static string ArchiveTickData(DateTime tradeDate)
+        public string ArchiveTickData(DateTime tradeDate)
         {
             try
             {
@@ -133,7 +146,7 @@ namespace MarketDataHub.Services
                 string nextDateStr = tradeDate.AddDays(1).ToString("yyyy-MM-dd");
 
                 // This query can return millions of rows - runs against tick database
-                DataTable ticks = DatabaseHelper.GetTicksForDateRange("*", dateStr, nextDateStr);
+                DataTable ticks = _db.GetTicksForDateRange("*", dateStr, nextDateStr);
 
                 StringBuilder csv = new StringBuilder();
                 csv.AppendLine("TickId,InstrumentId,RIC,Timestamp,BidPrice,AskPrice,TradePrice,TradeVolume,TradeCondition,FeedSource,SequenceNumber");
@@ -149,21 +162,21 @@ namespace MarketDataHub.Services
                 }
 
                 // Save to archive path (organized by year/month)
-                string archiveDir = Path.Combine(ConfigManager.TickDataArchivePath,
+                string archiveDir = Path.Combine(_config.TickDataArchivePath,
                     tradeDate.Year.ToString(), tradeDate.Month.ToString("00"));
-                if (!Directory.Exists(archiveDir))
-                    Directory.CreateDirectory(archiveDir);
+                if (!_fileSystem.DirectoryExists(archiveDir))
+                    _fileSystem.CreateDirectory(archiveDir);
 
                 string fileName = "TICKS_" + tradeDate.ToString("yyyyMMdd") + ".csv";
                 string filePath = Path.Combine(archiveDir, fileName);
-                File.WriteAllText(filePath, csv.ToString());
+                _fileSystem.WriteAllText(filePath, csv.ToString());
 
-                MvcApplication.WriteLog("Tick archive created: " + filePath + " (" + ticks.Rows.Count + " ticks)");
+                _logger.WriteLog("Tick archive created: " + filePath + " (" + ticks.Rows.Count + " ticks)");
                 return filePath;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Tick archive failed: " + ex.ToString());
+                _logger.WriteLog("Tick archive failed: " + ex.ToString());
                 return null;
             }
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.Net;
+using MarketDataHub.Interfaces;
 using MarketDataHub.Data;
 using MarketDataHub.Utils;
 using Newtonsoft.Json;
@@ -22,10 +23,23 @@ namespace MarketDataHub.Services
     {
         private static readonly string[] INDICES = { "FTSE100", "FTSE250", "FTSEAIM", "FTSE350" };
 
+        private readonly IDatabaseHelper _db;
+        private readonly IConfigProvider _config;
+        private readonly IAppLogger _logger;
+        private readonly IHttpClient _httpClient;
+
+        public IndexCalculationService(IDatabaseHelper db, IConfigProvider config, IAppLogger logger, IHttpClient httpClient)
+        {
+            _db = db;
+            _config = config;
+            _logger = logger;
+            _httpClient = httpClient;
+        }
+
         /// <summary>
         /// Recalculate all monitored indices. Called every 15 seconds by background timer.
         /// </summary>
-        public static void RecalculateAllIndices()
+        public void RecalculateAllIndices()
         {
             foreach (string indexCode in INDICES)
             {
@@ -35,7 +49,7 @@ namespace MarketDataHub.Services
                 }
                 catch (Exception ex)
                 {
-                    MvcApplication.WriteLog("Index recalc failed for " + indexCode + ": " + ex.Message);
+                    _logger.WriteLog("Index recalc failed for " + indexCode + ": " + ex.Message);
                 }
             }
         }
@@ -43,9 +57,9 @@ namespace MarketDataHub.Services
         /// <summary>
         /// Recalculate a single index value based on current constituent prices.
         /// </summary>
-        public static void RecalculateIndex(string indexCode)
+        public void RecalculateIndex(string indexCode)
         {
-            DataTable composition = DatabaseHelper.GetIndexComposition(indexCode);
+            DataTable composition = _db.GetIndexComposition(indexCode);
             if (composition.Rows.Count == 0) return;
 
             decimal indexValue = 0;
@@ -88,11 +102,11 @@ namespace MarketDataHub.Services
             catch (Exception ex)
             {
                 // Calc engine unreachable, use our approximation
-                MvcApplication.WriteLog("Calc engine unreachable for " + indexCode + ", using approx: " + ex.Message);
+                _logger.WriteLog("Calc engine unreachable for " + indexCode + ", using approx: " + ex.Message);
             }
 
             // Get previous close for change calculation
-            DataTable latestValues = DatabaseHelper.GetLatestIndexValues();
+            DataTable latestValues = _db.GetLatestIndexValues();
             decimal previousClose = 0;
             foreach (DataRow row in latestValues.Rows)
             {
@@ -104,22 +118,22 @@ namespace MarketDataHub.Services
             }
 
             // Store the calculated value
-            DatabaseHelper.InsertIndexValue(indexCode, indexValue, previousClose, DateTime.UtcNow);
+            _db.InsertIndexValue(indexCode, indexValue, previousClose, DateTime.UtcNow);
         }
 
         /// <summary>
         /// Get the official index divisor from the on-prem calculation engine.
         /// </summary>
-        private static decimal GetOfficialDivisor(string indexCode)
+        private decimal GetOfficialDivisor(string indexCode)
         {
-            using (WebClient client = new WebClient())
+            string url = _config.FtseCalcEngineUrl + "/divisor/" + indexCode;
+            var headers = new System.Collections.Generic.Dictionary<string, string>
             {
-                client.Headers.Add("Content-Type", "application/json");
-                string url = ConfigManager.FtseCalcEngineUrl + "/divisor/" + indexCode;
-                string response = client.DownloadString(url);
-                dynamic result = JsonConvert.DeserializeObject(response);
-                return (decimal)result.divisor;
-            }
+                { "Content-Type", "application/json" }
+            };
+            string response = _httpClient.DownloadString(url, headers);
+            dynamic result = JsonConvert.DeserializeObject(response);
+            return (decimal)result.divisor;
         }
     }
 }

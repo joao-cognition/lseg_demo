@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Mail;
+using MarketDataHub.Interfaces;
 using MarketDataHub.Utils;
 
 namespace MarketDataHub.Services
@@ -16,17 +17,33 @@ namespace MarketDataHub.Services
     /// We tried async email in 2019 but it caused issues with IIS thread pool exhaustion.
     /// The workaround was to revert to sync and just accept the latency hit. - Stuart M.
     /// </summary>
-    public class NotificationService
+    public class NotificationService : INotificationService
     {
+        private readonly IConfigProvider _config;
+        private readonly IAppLogger _logger;
+
+        private static NotificationService _instance;
+
+        public NotificationService(IConfigProvider config, IAppLogger logger)
+        {
+            _config = config;
+            _logger = logger;
+        }
+
+        public static void Initialize(IConfigProvider config, IAppLogger logger)
+        {
+            _instance = new NotificationService(config, logger);
+        }
+
         /// <summary>
         /// Send an email via the on-prem SMTP server.
         /// </summary>
-        public static bool SendEmail(string to, string subject, string body, string attachmentPath = null)
+        public bool SendEmail(string to, string subject, string body, string attachmentPath = null)
         {
             try
             {
                 MailMessage message = new MailMessage();
-                message.From = new MailAddress(ConfigManager.SmtpFromAddress, "MarketDataHub");
+                message.From = new MailAddress(_config.SmtpFromAddress, "MarketDataHub");
                 message.To.Add(new MailAddress(to));
                 message.Subject = subject;
                 message.Body = body;
@@ -37,19 +54,19 @@ namespace MarketDataHub.Services
                     message.Attachments.Add(new Attachment(attachmentPath));
                 }
 
-                SmtpClient smtp = new SmtpClient(ConfigManager.SmtpServer, ConfigManager.SmtpPort);
-                smtp.Credentials = new NetworkCredential(ConfigManager.SmtpUsername, ConfigManager.SmtpPassword);
+                SmtpClient smtp = new SmtpClient(_config.SmtpServer, _config.SmtpPort);
+                smtp.Credentials = new NetworkCredential(_config.SmtpUsername, _config.SmtpPassword);
                 smtp.EnableSsl = false;  // Internal server, SSL not required
                 smtp.Timeout = 30000;
 
                 smtp.Send(message);
 
-                MvcApplication.WriteLog("Email sent to " + to + ": " + subject);
+                _logger.WriteLog("Email sent to " + to + ": " + subject);
                 return true;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Email FAILED to " + to + ": " + subject + " - " + ex.Message);
+                _logger.WriteLog("Email FAILED to " + to + ": " + subject + " - " + ex.Message);
                 return false;
             }
         }
@@ -57,7 +74,7 @@ namespace MarketDataHub.Services
         /// <summary>
         /// Send system health alert to operations team.
         /// </summary>
-        public static void SendSystemAlert(string alertMessage, string severity)
+        public void SendSystemAlert(string alertMessage, string severity)
         {
             string[] opsTeam = new string[]
             {
@@ -65,7 +82,7 @@ namespace MarketDataHub.Services
                 "mdh-oncall@corp-internal.local"
             };
 
-            string subject = "[" + severity + "] MarketDataHub Alert - " + ConfigManager.SmtpFromAddress;
+            string subject = "[" + severity + "] MarketDataHub Alert - " + _config.SmtpFromAddress;
             string body = "<html><body>" +
                 "<h2 style='color: " + (severity == "CRITICAL" ? "red" : "orange") + ";'>" + severity + " Alert</h2>" +
                 "<p><strong>System:</strong> MarketDataHub (" + System.Configuration.ConfigurationManager.AppSettings["InstanceId"] + ")</p>" +
@@ -83,7 +100,7 @@ namespace MarketDataHub.Services
         /// <summary>
         /// Send daily operations summary email.
         /// </summary>
-        public static void SendDailySummary(int tickCount, int alertsTriggered, int feedDisconnects)
+        public void SendDailySummary(int tickCount, int alertsTriggered, int feedDisconnects)
         {
             string subject = "MarketDataHub Daily Summary - " + DateTime.Today.ToString("dd MMM yyyy");
             string body = string.Format(
@@ -101,6 +118,22 @@ namespace MarketDataHub.Services
             {
                 try { SendEmail(recipient, subject, body); } catch { }
             }
+        }
+
+        // Static backward-compatible methods that delegate to singleton instance
+        public static bool SendEmailStatic(string to, string subject, string body, string attachmentPath = null)
+        {
+            return _instance.SendEmail(to, subject, body, attachmentPath);
+        }
+
+        public static void SendSystemAlertStatic(string alertMessage, string severity)
+        {
+            _instance.SendSystemAlert(alertMessage, severity);
+        }
+
+        public static void SendDailySummaryStatic(int tickCount, int alertsTriggered, int feedDisconnects)
+        {
+            _instance.SendDailySummary(tickCount, alertsTriggered, feedDisconnects);
         }
     }
 }

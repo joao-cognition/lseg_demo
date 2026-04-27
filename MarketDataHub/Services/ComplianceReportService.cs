@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Xml;
+using MarketDataHub.Interfaces;
 using MarketDataHub.Data;
 using MarketDataHub.Utils;
 using Newtonsoft.Json;
@@ -24,16 +25,34 @@ namespace MarketDataHub.Services
     /// </summary>
     public class ComplianceReportService
     {
+        private readonly IDatabaseHelper _db;
+        private readonly IConfigProvider _config;
+        private readonly IAppLogger _logger;
+        private readonly INotificationService _notifications;
+        private readonly IFileSystem _fileSystem;
+        private readonly IHttpClient _httpClient;
+
+        public ComplianceReportService(IDatabaseHelper db, IConfigProvider config, IAppLogger logger,
+            INotificationService notifications, IFileSystem fileSystem, IHttpClient httpClient)
+        {
+            _db = db;
+            _config = config;
+            _logger = logger;
+            _notifications = notifications;
+            _fileSystem = fileSystem;
+            _httpClient = httpClient;
+        }
+
         /// <summary>
         /// Generate the daily MiFID II transaction report.
         /// Submitted to FCA via on-prem reporting endpoint.
         /// </summary>
-        public static string GenerateMifidTransactionReport(DateTime tradeDate)
+        public string GenerateMifidTransactionReport(DateTime tradeDate)
         {
             try
             {
                 string dateStr = tradeDate.ToString("yyyy-MM-dd");
-                DataTable complianceData = DatabaseHelper.GetComplianceReport(dateStr, dateStr + " 23:59:59");
+                DataTable complianceData = _db.GetComplianceReport(dateStr, dateStr + " 23:59:59");
 
                 // Build XML report per FCA specification
                 XmlDocument doc = new XmlDocument();
@@ -46,7 +65,7 @@ namespace MarketDataHub.Services
 
                 // Header
                 XmlElement header = doc.CreateElement("Header");
-                AddXmlElement(doc, header, "ReportingEntityId", ConfigManager.FcaEntityId);
+                AddXmlElement(doc, header, "ReportingEntityId", _config.FcaEntityId);
                 AddXmlElement(doc, header, "ReportDate", dateStr);
                 AddXmlElement(doc, header, "GeneratedAt", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
                 AddXmlElement(doc, header, "RecordCount", complianceData.Rows.Count.ToString());
@@ -71,26 +90,34 @@ namespace MarketDataHub.Services
                 root.AppendChild(transactions);
 
                 // Save to regulatory archive
-                string mifidDir = Path.Combine(ConfigManager.MifidReportPath, tradeDate.Year.ToString());
-                if (!Directory.Exists(mifidDir))
-                    Directory.CreateDirectory(mifidDir);
+                string mifidDir = Path.Combine(_config.MifidReportPath, tradeDate.Year.ToString());
+                if (!_fileSystem.DirectoryExists(mifidDir))
+                    _fileSystem.CreateDirectory(mifidDir);
 
                 string fileName = "MIFID_TXN_" + tradeDate.ToString("yyyyMMdd") + ".xml";
                 string filePath = Path.Combine(mifidDir, fileName);
-                doc.Save(filePath);
+
+                using (StringWriter sw = new StringWriter())
+                {
+                    using (XmlTextWriter xw = new XmlTextWriter(sw))
+                    {
+                        xw.Formatting = Formatting.Indented;
+                        doc.WriteTo(xw);
+                    }
+                    _fileSystem.WriteAllText(filePath, sw.ToString());
+                }
 
                 // Submit to on-prem regulatory reporting system
                 SubmitToFca(filePath);
 
-                MvcApplication.WriteLog("MiFID transaction report generated: " + filePath +
+                _logger.WriteLog("MiFID transaction report generated: " + filePath +
                     " (" + complianceData.Rows.Count + " instruments)");
                 return filePath;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("MiFID report generation FAILED: " + ex.ToString());
-                // Send alert - regulatory reporting failure is critical
-                NotificationService.SendSystemAlert(
+                _logger.WriteLog("MiFID report generation FAILED: " + ex.ToString());
+                _notifications.SendSystemAlert(
                     "MiFID II Transaction Report generation failed for " + tradeDate.ToString("dd MMM yyyy") +
                     ". Error: " + ex.Message, "CRITICAL");
                 return null;
@@ -100,12 +127,12 @@ namespace MarketDataHub.Services
         /// <summary>
         /// Generate market data quality report for internal compliance review.
         /// </summary>
-        public static string GenerateDataQualityReport(DateTime tradeDate)
+        public string GenerateDataQualityReport(DateTime tradeDate)
         {
             try
             {
                 string dateStr = tradeDate.ToString("yyyy-MM-dd");
-                DataTable tickCounts = DatabaseHelper.GetTickCountByDate(tradeDate);
+                DataTable tickCounts = _db.GetTickCountByDate(tradeDate);
 
                 StringBuilder html = new StringBuilder();
                 html.AppendLine("<html><head><style>");
@@ -132,7 +159,7 @@ namespace MarketDataHub.Services
 
                 // Check for data quality issues
                 html.AppendLine("<h2>Data Quality Issues</h2>");
-                DataTable suspended = DatabaseHelper.GetSuspendedInstruments();
+                DataTable suspended = _db.GetSuspendedInstruments();
                 if (suspended.Rows.Count > 0)
                 {
                     html.AppendLine("<p class='critical'>Suspended Instruments: " + suspended.Rows.Count + "</p>");
@@ -152,15 +179,15 @@ namespace MarketDataHub.Services
                 html.AppendLine("</body></html>");
 
                 string fileName = "DataQuality_" + tradeDate.ToString("yyyyMMdd") + ".html";
-                string filePath = Path.Combine(ConfigManager.ReportOutputPath, fileName);
-                File.WriteAllText(filePath, html.ToString());
+                string filePath = Path.Combine(_config.ReportOutputPath, fileName);
+                _fileSystem.WriteAllText(filePath, html.ToString());
 
-                MvcApplication.WriteLog("Data quality report generated: " + filePath);
+                _logger.WriteLog("Data quality report generated: " + filePath);
                 return filePath;
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Data quality report failed: " + ex.ToString());
+                _logger.WriteLog("Data quality report failed: " + ex.ToString());
                 return null;
             }
         }
@@ -168,24 +195,23 @@ namespace MarketDataHub.Services
         /// <summary>
         /// Submit report to on-prem FCA regulatory reporting endpoint.
         /// </summary>
-        private static void SubmitToFca(string reportFilePath)
+        private void SubmitToFca(string reportFilePath)
         {
             try
             {
-                string reportXml = File.ReadAllText(reportFilePath);
-                using (WebClient client = new WebClient())
+                string reportXml = _fileSystem.ReadAllText(reportFilePath);
+                var headers = new System.Collections.Generic.Dictionary<string, string>
                 {
-                    client.Headers.Add("Content-Type", "application/xml");
-                    client.Headers.Add("X-Entity-Id", ConfigManager.FcaEntityId);
-                    client.UploadString(ConfigManager.FcaReportingEndpoint, reportXml);
-                }
-                MvcApplication.WriteLog("Report submitted to FCA endpoint: " + reportFilePath);
+                    { "Content-Type", "application/xml" },
+                    { "X-Entity-Id", _config.FcaEntityId }
+                };
+                _httpClient.UploadString(_config.FcaReportingEndpoint, reportXml, headers);
+                _logger.WriteLog("Report submitted to FCA endpoint: " + reportFilePath);
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("FCA submission failed: " + ex.Message);
-                // Critical - manual submission required
-                NotificationService.SendSystemAlert(
+                _logger.WriteLog("FCA submission failed: " + ex.Message);
+                _notifications.SendSystemAlert(
                     "FCA report submission failed. Manual submission required for: " + reportFilePath,
                     "CRITICAL");
             }
