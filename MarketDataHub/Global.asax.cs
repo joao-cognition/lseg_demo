@@ -6,6 +6,8 @@ using System.Web.Http;
 using System.IO;
 using System.Configuration;
 using System.Threading;
+using MarketDataHub.Interfaces;
+using MarketDataHub.Interfaces.Impl;
 using MarketDataHub.Services;
 
 namespace MarketDataHub
@@ -15,11 +17,28 @@ namespace MarketDataHub
         private static Timer _feedHealthTimer;
         private static Timer _indexRecalcTimer;
 
+        private static PriceFeedService _priceFeedService;
+        private static IndexCalculationService _indexCalcService;
+
         protected void Application_Start()
         {
             AreaRegistration.RegisterAllAreas();
             GlobalConfiguration.Configure(WebApiConfig.Register);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
+
+            // Create wrapper instances for dependency injection
+            IDatabaseHelper dbHelper = new DatabaseHelperWrapper();
+            IConfigProvider configProvider = new ConfigProviderWrapper();
+            IAppLogger appLogger = new AppLoggerWrapper();
+            IFileSystem fileSystem = new FileSystemWrapper();
+            IHttpClient httpClient = new HttpClientWrapper();
+            IFixProtocolClient fixClient = new FixProtocolClientWrapper();
+
+            INotificationService notificationService = new NotificationService(configProvider, appLogger);
+
+            // Create service instances with injected dependencies
+            _priceFeedService = new PriceFeedService(dbHelper, appLogger, notificationService, fixClient);
+            _indexCalcService = new IndexCalculationService(dbHelper, configProvider, appLogger, httpClient);
 
             // Initialize file storage directories on network share
             try
@@ -73,11 +92,11 @@ namespace MarketDataHub
             try
             {
                 // Check FIX gateway connection
-                bool fixAlive = PriceFeedService.CheckFeedConnection();
+                bool fixAlive = _priceFeedService.CheckFeedConnection();
                 if (!fixAlive)
                 {
                     WriteLog("WARNING: FIX gateway connection lost! Attempting reconnect...");
-                    PriceFeedService.ReconnectFeed();
+                    _priceFeedService.ReconnectFeed();
                 }
             }
             catch (Exception ex)
@@ -90,7 +109,7 @@ namespace MarketDataHub
         {
             try
             {
-                IndexCalculationService.RecalculateAllIndices();
+                _indexCalcService.RecalculateAllIndices();
             }
             catch (Exception ex)
             {

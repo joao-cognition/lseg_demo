@@ -3,6 +3,7 @@ using System.Data;
 using System.Net;
 using System.Threading;
 using System.Collections.Generic;
+using MarketDataHub.Interfaces;
 using MarketDataHub.Data;
 using MarketDataHub.Utils;
 using Newtonsoft.Json;
@@ -23,16 +24,30 @@ namespace MarketDataHub.Services
     /// </summary>
     public class PriceFeedService
     {
-        private static readonly object _processingLock = new object();
-        private static List<TcpDistributionClient> _tcpClients = new List<TcpDistributionClient>();
-        private static int _ticksProcessedToday = 0;
-        private static DateTime _lastTickTime = DateTime.MinValue;
+        private readonly IDatabaseHelper _db;
+        private readonly IAppLogger _logger;
+        private readonly INotificationService _notifications;
+        private readonly IFixProtocolClient _fixClient;
+
+        private readonly object _processingLock = new object();
+        private List<TcpDistributionClient> _tcpClients = new List<TcpDistributionClient>();
+        private int _ticksProcessedToday = 0;
+        private DateTime _lastTickTime = DateTime.MinValue;
+
+        public PriceFeedService(IDatabaseHelper db, IAppLogger logger,
+            INotificationService notifications, IFixProtocolClient fixClient)
+        {
+            _db = db;
+            _logger = logger;
+            _notifications = notifications;
+            _fixClient = fixClient;
+        }
 
         /// <summary>
         /// Process an incoming price tick from the FIX gateway.
         /// Called for every tick - must be fast but currently does too much synchronously.
         /// </summary>
-        public static void ProcessTick(string ric, decimal bidPrice, decimal askPrice,
+        public void ProcessTick(string ric, decimal bidPrice, decimal askPrice,
             decimal tradePrice, long tradeVolume, string tradeCondition, string feedSource,
             int sequenceNumber, DateTime timestamp)
         {
@@ -41,10 +56,10 @@ namespace MarketDataHub.Services
                 try
                 {
                     // 1. Look up instrument
-                    DataTable instrument = DatabaseHelper.GetInstrumentByRIC(ric);
+                    DataTable instrument = _db.GetInstrumentByRIC(ric);
                     if (instrument.Rows.Count == 0)
                     {
-                        MvcApplication.WriteLog("Unknown RIC received: " + ric + " from " + feedSource);
+                        _logger.WriteLog("Unknown RIC received: " + ric + " from " + feedSource);
                         return;
                     }
 
@@ -53,17 +68,17 @@ namespace MarketDataHub.Services
                     // Check if instrument is suspended
                     if (Convert.ToInt32(instrument.Rows[0]["IsSuspended"]) == 1)
                     {
-                        MvcApplication.WriteLog("Tick received for suspended instrument: " + ric);
+                        _logger.WriteLog("Tick received for suspended instrument: " + ric);
                         return;
                     }
 
                     // 2. Insert tick into tick store
-                    DatabaseHelper.InsertTick(instrumentId, ric, bidPrice, askPrice, tradePrice,
+                    _db.InsertTick(instrumentId, ric, bidPrice, askPrice, tradePrice,
                         tradeVolume, bidPrice, askPrice, tradeCondition, feedSource,
                         sequenceNumber, timestamp);
 
                     // 3. Update instrument real-time price
-                    DatabaseHelper.UpdateInstrumentPrice(instrumentId, tradePrice, bidPrice, askPrice,
+                    _db.UpdateInstrumentPrice(instrumentId, tradePrice, bidPrice, askPrice,
                         tradeVolume, timestamp);
 
                     // 4. Check price alerts (synchronous - blocks feed processing)
@@ -78,7 +93,7 @@ namespace MarketDataHub.Services
                 }
                 catch (Exception ex)
                 {
-                    MvcApplication.WriteLog("Tick processing error for " + ric + ": " + ex.Message);
+                    _logger.WriteLog("Tick processing error for " + ric + ": " + ex.Message);
                 }
             }
         }
@@ -89,11 +104,11 @@ namespace MarketDataHub.Services
         /// adds significant latency. We should cache alerts in memory but haven't 
         /// had time to implement it. - Stuart M. (2019)
         /// </summary>
-        private static void CheckPriceAlerts(int instrumentId, string ric, decimal currentPrice, long volume)
+        private void CheckPriceAlerts(int instrumentId, string ric, decimal currentPrice, long volume)
         {
             try
             {
-                DataTable alerts = DatabaseHelper.GetActiveAlerts();
+                DataTable alerts = _db.GetActiveAlerts();
                 foreach (DataRow alert in alerts.Rows)
                 {
                     if (Convert.ToInt32(alert["InstrumentId"]) != instrumentId) continue;
@@ -118,7 +133,7 @@ namespace MarketDataHub.Services
                     if (shouldTrigger)
                     {
                         int alertId = Convert.ToInt32(alert["AlertId"]);
-                        DatabaseHelper.TriggerAlert(alertId);
+                        _db.TriggerAlert(alertId);
 
                         // Send notification email (synchronous - blocks feed!)
                         string email = alert["NotifyEmail"].ToString();
@@ -133,14 +148,14 @@ namespace MarketDataHub.Services
                             "<p><em>- MarketDataHub Alert System</em></p></body></html>",
                             ric, alertType, threshold, currentPrice, DateTime.Now);
 
-                        NotificationService.SendEmail(email, subject, body);
-                        MvcApplication.WriteLog("Alert triggered: " + alertType + " for " + ric + " at " + currentPrice);
+                        _notifications.SendEmail(email, subject, body);
+                        _logger.WriteLog("Alert triggered: " + alertType + " for " + ric + " at " + currentPrice);
                     }
                 }
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Alert check failed: " + ex.Message);
+                _logger.WriteLog("Alert check failed: " + ex.Message);
             }
         }
 
@@ -151,7 +166,7 @@ namespace MarketDataHub.Services
         /// 
         /// Format: RIC|BID|ASK|TRADE|VOLUME|TIMESTAMP\n
         /// </summary>
-        private static void DistributeToTcpClients(string ric, decimal bid, decimal ask,
+        private void DistributeToTcpClients(string ric, decimal bid, decimal ask,
             decimal trade, long volume, DateTime timestamp)
         {
             string message = string.Format("{0}|{1}|{2}|{3}|{4}|{5}\n",
@@ -176,37 +191,37 @@ namespace MarketDataHub.Services
             foreach (var dead in deadClients)
             {
                 _tcpClients.Remove(dead);
-                MvcApplication.WriteLog("TCP client disconnected: " + dead.ClientId);
+                _logger.WriteLog("TCP client disconnected: " + dead.ClientId);
             }
         }
 
         /// <summary>
         /// Check if the FIX feed connection is alive.
         /// </summary>
-        public static bool CheckFeedConnection()
+        public bool CheckFeedConnection()
         {
-            return FixProtocolClient.IsConnected && FixProtocolClient.CheckConnection();
+            return _fixClient.IsConnected && _fixClient.CheckConnection();
         }
 
         /// <summary>
         /// Attempt to reconnect to the FIX gateway.
         /// </summary>
-        public static void ReconnectFeed()
+        public void ReconnectFeed()
         {
             try
             {
-                FixProtocolClient.Disconnect();
+                _fixClient.Disconnect();
                 Thread.Sleep(5000);  // Wait 5 seconds before reconnecting
-                FixProtocolClient.Connect();
+                _fixClient.Connect();
             }
             catch (Exception ex)
             {
-                MvcApplication.WriteLog("Feed reconnect failed: " + ex.Message);
+                _logger.WriteLog("Feed reconnect failed: " + ex.Message);
             }
         }
 
-        public static int GetTicksProcessedToday() { return _ticksProcessedToday; }
-        public static DateTime GetLastTickTime() { return _lastTickTime; }
+        public int GetTicksProcessedToday() { return _ticksProcessedToday; }
+        public DateTime GetLastTickTime() { return _lastTickTime; }
     }
 
     /// <summary>
