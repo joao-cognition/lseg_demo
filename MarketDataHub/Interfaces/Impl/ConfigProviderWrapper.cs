@@ -17,5 +17,6 @@ namespace MarketDataHub.Interfaces.Impl
         public string TickDataArchivePath { get { return ConfigManager.TickDataArchivePath; } }
         public string FtseCalcEngineUrl { get { return ConfigManager.FtseCalcEngineUrl; } }
         public string TempFilePath { get { return ConfigManager.TempFilePath; } }
+        public string InstanceId { get { return System.Configuration.ConfigurationManager.AppSettings["InstanceId"]; } }
     }
 }

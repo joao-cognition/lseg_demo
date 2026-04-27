@@ -34,8 +34,6 @@ namespace MarketDataHub
             IHttpClient httpClient = new HttpClientWrapper();
             IFixProtocolClient fixClient = new FixProtocolClientWrapper();
 
-            // Initialize NotificationService singleton for backward compatibility
-            NotificationService.Initialize(configProvider, appLogger);
             INotificationService notificationService = new NotificationService(configProvider, appLogger);
 
             // Create service instances with injected dependencies

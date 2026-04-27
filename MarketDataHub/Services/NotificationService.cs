@@ -2,7 +2,6 @@ using System;
 using System.Net;
 using System.Net.Mail;
 using MarketDataHub.Interfaces;
-using MarketDataHub.Utils;
 
 namespace MarketDataHub.Services
 {
@@ -22,17 +21,10 @@ namespace MarketDataHub.Services
         private readonly IConfigProvider _config;
         private readonly IAppLogger _logger;
 
-        private static NotificationService _instance;
-
         public NotificationService(IConfigProvider config, IAppLogger logger)
         {
             _config = config;
             _logger = logger;
-        }
-
-        public static void Initialize(IConfigProvider config, IAppLogger logger)
-        {
-            _instance = new NotificationService(config, logger);
         }
 
         /// <summary>
@@ -85,7 +77,7 @@ namespace MarketDataHub.Services
             string subject = "[" + severity + "] MarketDataHub Alert - " + _config.SmtpFromAddress;
             string body = "<html><body>" +
                 "<h2 style='color: " + (severity == "CRITICAL" ? "red" : "orange") + ";'>" + severity + " Alert</h2>" +
-                "<p><strong>System:</strong> MarketDataHub (" + System.Configuration.ConfigurationManager.AppSettings["InstanceId"] + ")</p>" +
+                "<p><strong>System:</strong> MarketDataHub (" + _config.InstanceId + ")</p>" +
                 "<p><strong>Time:</strong> " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " UTC</p>" +
                 "<p><strong>Message:</strong> " + alertMessage + "</p>" +
                 "<p><em>This is an automated alert from MarketDataHub.</em></p>" +
@@ -120,20 +112,6 @@ namespace MarketDataHub.Services
             }
         }
 
-        // Static backward-compatible methods that delegate to singleton instance
-        public static bool SendEmailStatic(string to, string subject, string body, string attachmentPath = null)
-        {
-            return _instance.SendEmail(to, subject, body, attachmentPath);
-        }
 
-        public static void SendSystemAlertStatic(string alertMessage, string severity)
-        {
-            _instance.SendSystemAlert(alertMessage, severity);
-        }
-
-        public static void SendDailySummaryStatic(int tickCount, int alertsTriggered, int feedDisconnects)
-        {
-            _instance.SendDailySummary(tickCount, alertsTriggered, feedDisconnects);
-        }
     }
 }

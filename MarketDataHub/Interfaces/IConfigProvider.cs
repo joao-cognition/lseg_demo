@@ -15,5 +15,6 @@ namespace MarketDataHub.Interfaces
         string TickDataArchivePath { get; }
         string FtseCalcEngineUrl { get; }
         string TempFilePath { get; }
+        string InstanceId { get; }
     }
 }
