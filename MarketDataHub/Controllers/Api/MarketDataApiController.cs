@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Data;
 using System.Web.Http;
 using MarketDataHub.Data;
@@ -126,12 +127,14 @@ namespace MarketDataHub.Controllers.Api
             });
         }
 
+        private static readonly string _feedApiKey = ConfigurationManager.AppSettings["FeedApiKey"];
+
         private bool ValidateApiKey(string apiKey)
         {
             if (string.IsNullOrEmpty(apiKey)) return false;
 
             // Check if it's the internal feed key
-            if (apiKey == "MDH-INTERNAL-FEED-KEY-2019") return true;
+            if (!string.IsNullOrEmpty(_feedApiKey) && apiKey == _feedApiKey) return true;
 
             // Check if it's a user-generated API key
             DataTable user = DatabaseHelper.GetUserByApiKey(apiKey);

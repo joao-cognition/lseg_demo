@@ -62,7 +62,7 @@ GO
 CREATE TABLE Users (
     UserId INT IDENTITY(1,1) PRIMARY KEY,
     Username VARCHAR(50) NOT NULL UNIQUE,
-    PasswordHash VARCHAR(64) NOT NULL,
+    PasswordHash VARCHAR(256) NOT NULL,
     FullName NVARCHAR(100),
     Email VARCHAR(200),
     Department VARCHAR(50),

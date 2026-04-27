@@ -103,17 +103,49 @@ namespace MarketDataHub.Controllers
             return RedirectToAction("Index");
         }
 
-        // GET: /Reports/Download?path=\\server\reports\file.csv
+        // GET: /Reports/Download?path=file.csv
         public ActionResult Download(string path)
         {
             if (Session["Username"] == null)
                 return RedirectToAction("Login", "Auth");
 
-            // Read file from network share
-            if (System.IO.File.Exists(path))
+            if (string.IsNullOrEmpty(path))
+                return HttpNotFound();
+
+            // Restrict downloads to allowed directories only
+            string[] allowedRoots = new[]
             {
-                byte[] fileBytes = System.IO.File.ReadAllBytes(path);
-                string fileName = System.IO.Path.GetFileName(path);
+                ConfigManager.ReportOutputPath,
+                ConfigManager.EndOfDayPath,
+                ConfigManager.TickDataArchivePath
+            };
+
+            string fullPath = System.IO.Path.GetFullPath(path);
+
+            bool isAllowed = false;
+            foreach (string root in allowedRoots)
+            {
+                if (!string.IsNullOrEmpty(root))
+                {
+                    string allowedRoot = System.IO.Path.GetFullPath(root).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+                    if (fullPath.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isAllowed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!isAllowed)
+            {
+                MvcApplication.WriteLog("Blocked path traversal attempt: " + path + " by user " + Session["Username"]);
+                return new HttpStatusCodeResult(403, "Access denied");
+            }
+
+            if (System.IO.File.Exists(fullPath))
+            {
+                byte[] fileBytes = System.IO.File.ReadAllBytes(fullPath);
+                string fileName = System.IO.Path.GetFileName(fullPath);
                 return File(fileBytes, "application/octet-stream", fileName);
             }
 
