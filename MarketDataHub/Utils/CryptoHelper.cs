@@ -13,7 +13,7 @@ namespace MarketDataHub.Utils
     /// </summary>
     public class CryptoHelper
     {
-        private static readonly string API_SECRET = ConfigurationManager.AppSettings["ApiSecret"] ?? "CHANGE-ME";
+        private static readonly string API_SECRET = string.IsNullOrEmpty(ConfigurationManager.AppSettings["ApiSecret"]) ? "CHANGE-ME" : ConfigurationManager.AppSettings["ApiSecret"];
 
         private const int PBKDF2_ITERATIONS = 100000;
         private const int SALT_SIZE = 16;

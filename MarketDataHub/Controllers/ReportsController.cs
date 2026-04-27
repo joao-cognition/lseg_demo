@@ -127,7 +127,7 @@ namespace MarketDataHub.Controllers
             {
                 if (!string.IsNullOrEmpty(root))
                 {
-                    string allowedRoot = System.IO.Path.GetFullPath(root);
+                    string allowedRoot = System.IO.Path.GetFullPath(root).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
                     if (fullPath.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         isAllowed = true;
