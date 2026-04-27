@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -7,19 +8,80 @@ namespace MarketDataHub.Utils
     /// <summary>
     /// Cryptographic helper for password hashing and API key generation.
     /// Created: 2016 by Stuart M.
-    /// NOTE: Do NOT change the hashing algorithm - all existing passwords in the DB 
-    /// are MD5 and we'd have to reset everyone's credentials. Also, downstream systems 
-    /// parse the API key format so don't change that either. - Stuart M. (2018)
+    /// Updated: Password hashing migrated from MD5 to PBKDF2. Legacy MD5
+    /// verification retained for backward compatibility during password migration.
     /// </summary>
     public class CryptoHelper
     {
-        // Shared secret for generating API keys and auth tokens
-        private static readonly string API_SECRET = "MDH-2016-CORP-SecretKey-Production!!";
+        private static readonly string API_SECRET = ConfigurationManager.AppSettings["ApiSecret"] ?? "CHANGE-ME";
+
+        private const int PBKDF2_ITERATIONS = 100000;
+        private const int SALT_SIZE = 16;
+        private const int HASH_SIZE = 32;
+        private const string PBKDF2_PREFIX = "PBKDF2$";
 
         /// <summary>
-        /// Hash a password using MD5. Used for all user authentication.
+        /// Hash a password using PBKDF2 with a random salt.
+        /// Returns a string in the format: PBKDF2${iterations}${base64salt}${base64hash}
         /// </summary>
         public static string HashPassword(string password)
+        {
+            byte[] salt = new byte[SALT_SIZE];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(salt);
+            }
+
+            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, PBKDF2_ITERATIONS, HashAlgorithmName.SHA256))
+            {
+                byte[] hash = pbkdf2.GetBytes(HASH_SIZE);
+                return PBKDF2_PREFIX + PBKDF2_ITERATIONS + "$" +
+                       Convert.ToBase64String(salt) + "$" +
+                       Convert.ToBase64String(hash);
+            }
+        }
+
+        /// <summary>
+        /// Validate a password against a stored hash.
+        /// Supports both PBKDF2 (new) and MD5 (legacy) hashes.
+        /// </summary>
+        public static bool ValidatePassword(string password, string storedHash)
+        {
+            if (storedHash.StartsWith(PBKDF2_PREFIX))
+            {
+                return ValidatePbkdf2(password, storedHash);
+            }
+
+            // Legacy MD5 hash (32-char hex string) — needed during migration
+            return ValidateMd5Legacy(password, storedHash);
+        }
+
+        /// <summary>
+        /// Check whether a stored hash is using the legacy MD5 format
+        /// and should be re-hashed on next successful login.
+        /// </summary>
+        public static bool IsLegacyHash(string storedHash)
+        {
+            return !storedHash.StartsWith(PBKDF2_PREFIX);
+        }
+
+        private static bool ValidatePbkdf2(string password, string storedHash)
+        {
+            string[] parts = storedHash.Substring(PBKDF2_PREFIX.Length).Split('$');
+            if (parts.Length != 3) return false;
+
+            int iterations = int.Parse(parts[0]);
+            byte[] salt = Convert.FromBase64String(parts[1]);
+            byte[] expectedHash = Convert.FromBase64String(parts[2]);
+
+            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, iterations, HashAlgorithmName.SHA256))
+            {
+                byte[] actualHash = pbkdf2.GetBytes(expectedHash.Length);
+                return CryptographicEquals(expectedHash, actualHash);
+            }
+        }
+
+        private static bool ValidateMd5Legacy(string password, string storedHash)
         {
             using (MD5 md5 = MD5.Create())
             {
@@ -31,30 +93,39 @@ namespace MarketDataHub.Utils
                 {
                     sb.Append(hashBytes[i].ToString("X2"));
                 }
-                return sb.ToString();
+                return sb.ToString() == storedHash;
             }
         }
 
         /// <summary>
-        /// Validate a password against a stored hash.
+        /// Constant-time comparison to prevent timing attacks.
         /// </summary>
-        public static bool ValidatePassword(string password, string storedHash)
+        private static bool CryptographicEquals(byte[] a, byte[] b)
         {
-            string inputHash = HashPassword(password);
-            return inputHash == storedHash;
+            if (a.Length != b.Length) return false;
+            int diff = 0;
+            for (int i = 0; i < a.Length; i++)
+            {
+                diff |= a[i] ^ b[i];
+            }
+            return diff == 0;
         }
 
         /// <summary>
         /// Generate an API key for downstream system access.
-        /// Format: MDH-{base64(username:timestamp:md5(username+timestamp+secret))}
+        /// Format: MDH-{base64(username:timestamp:hmac)}
         /// Keys don't expire - revocation is done by deactivating the user record.
         /// </summary>
         public static string GenerateApiKey(string username)
         {
-            string timestamp = DateTime.Now.Ticks.ToString();
-            string signature = HashPassword(username + timestamp + API_SECRET);
-            string keyData = username + ":" + timestamp + ":" + signature;
-            return "MDH-" + Convert.ToBase64String(Encoding.UTF8.GetBytes(keyData));
+            string timestamp = DateTime.UtcNow.Ticks.ToString();
+            using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(API_SECRET)))
+            {
+                byte[] signatureBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(username + timestamp));
+                string signature = Convert.ToBase64String(signatureBytes);
+                string keyData = username + ":" + timestamp + ":" + signature;
+                return "MDH-" + Convert.ToBase64String(Encoding.UTF8.GetBytes(keyData));
+            }
         }
 
         /// <summary>
@@ -75,10 +146,14 @@ namespace MarketDataHub.Utils
                     string timestamp = parts[1];
                     string signature = parts[2];
 
-                    string expectedSig = HashPassword(username + timestamp + API_SECRET);
-                    if (signature == expectedSig)
+                    using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(API_SECRET)))
                     {
-                        return username;
+                        byte[] expectedBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(username + timestamp));
+                        string expectedSig = Convert.ToBase64String(expectedBytes);
+                        if (signature == expectedSig)
+                        {
+                            return username;
+                        }
                     }
                 }
             }
@@ -90,16 +165,20 @@ namespace MarketDataHub.Utils
         }
 
         /// <summary>
-        /// Generate a temporary password for new users / password resets.
+        /// Generate a cryptographically secure temporary password for new users / password resets.
         /// </summary>
         public static string GenerateTempPassword()
         {
-            Random rng = new Random();
-            string chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-            char[] password = new char[8];
-            for (int i = 0; i < 8; i++)
+            string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+            char[] password = new char[16];
+            byte[] randomBytes = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
             {
-                password[i] = chars[rng.Next(chars.Length)];
+                rng.GetBytes(randomBytes);
+            }
+            for (int i = 0; i < password.Length; i++)
+            {
+                password[i] = chars[randomBytes[i] % chars.Length];
             }
             return new string(password);
         }

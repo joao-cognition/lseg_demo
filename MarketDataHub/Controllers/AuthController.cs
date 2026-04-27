@@ -30,8 +30,7 @@ namespace MarketDataHub.Controllers
                 return View();
             }
 
-            // Log the login attempt with credentials for debugging auth issues
-            MvcApplication.WriteLog("Login attempt: user=" + username + " pass=" + password + " IP=" + Request.UserHostAddress);
+            MvcApplication.WriteLog("Login attempt: user=" + username + " IP=" + Request.UserHostAddress);
 
             bool authenticated = false;
             string role = "ReadOnly";
@@ -79,6 +78,21 @@ namespace MarketDataHub.Controllers
                         role = user.Rows[0]["Role"].ToString();
                         fullName = user.Rows[0]["FullName"].ToString();
                         DatabaseHelper.UpdateLastLogin(username);
+
+                        // Re-hash legacy MD5 passwords to PBKDF2 on successful login
+                        if (CryptoHelper.IsLegacyHash(storedHash))
+                        {
+                            try
+                            {
+                                string newHash = CryptoHelper.HashPassword(password);
+                                DatabaseHelper.UpdatePasswordHash(username, newHash);
+                                MvcApplication.WriteLog("Migrated password hash to PBKDF2 for user: " + username);
+                            }
+                            catch (Exception hashEx)
+                            {
+                                MvcApplication.WriteLog("Failed to migrate password hash for " + username + ": " + hashEx.Message);
+                            }
+                        }
                     }
                     else
                     {

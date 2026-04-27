@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Data;
 using System.Web.Mvc;
 using MarketDataHub.Data;
@@ -12,6 +13,8 @@ namespace MarketDataHub.Controllers
     /// </summary>
     public class PriceFeedController : Controller
     {
+        private static readonly string _feedApiKey = ConfigurationManager.AppSettings["FeedApiKey"];
+
         // POST: /PriceFeed/IngestTick
         [HttpPost]
         public JsonResult IngestTick(string ric, decimal bidPrice, decimal askPrice,
@@ -20,9 +23,8 @@ namespace MarketDataHub.Controllers
         {
             try
             {
-                // Basic API key authentication
                 string apiKey = Request.Headers["X-API-Key"];
-                if (string.IsNullOrEmpty(apiKey) || apiKey != "MDH-INTERNAL-FEED-KEY-2019")
+                if (string.IsNullOrEmpty(apiKey) || apiKey != _feedApiKey)
                 {
                     return Json(new { success = false, error = "Invalid API key" });
                 }
@@ -46,7 +48,7 @@ namespace MarketDataHub.Controllers
             try
             {
                 string apiKey = Request.Headers["X-API-Key"];
-                if (string.IsNullOrEmpty(apiKey) || apiKey != "MDH-INTERNAL-FEED-KEY-2019")
+                if (string.IsNullOrEmpty(apiKey) || apiKey != _feedApiKey)
                 {
                     return Json(new { success = false, error = "Invalid API key" });
                 }
