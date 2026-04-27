@@ -170,15 +170,23 @@ namespace MarketDataHub.Utils
         public static string GenerateTempPassword()
         {
             string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+            int maxUnbiased = 256 - (256 % chars.Length); // reject values >= this threshold
             char[] password = new char[16];
-            byte[] randomBytes = new byte[16];
+            int filled = 0;
             using (var rng = RandomNumberGenerator.Create())
             {
-                rng.GetBytes(randomBytes);
-            }
-            for (int i = 0; i < password.Length; i++)
-            {
-                password[i] = chars[randomBytes[i] % chars.Length];
+                while (filled < password.Length)
+                {
+                    byte[] buf = new byte[password.Length - filled + 4]; // slight overallocation
+                    rng.GetBytes(buf);
+                    for (int j = 0; j < buf.Length && filled < password.Length; j++)
+                    {
+                        if (buf[j] < maxUnbiased)
+                        {
+                            password[filled++] = chars[buf[j] % chars.Length];
+                        }
+                    }
+                }
             }
             return new string(password);
         }
